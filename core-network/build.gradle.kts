@@ -9,12 +9,12 @@ plugins {
 }
 
 // Load local.properties
-val localPropertiesFile = rootProject.file("local.properties.example")
+val localPropertiesFile = rootProject.file("local.properties")
 val localProperties = Properties()
 if (localPropertiesFile.exists()) {
     localProperties.load(FileInputStream(localPropertiesFile))
 }
-val tmdbApiKey = localProperties.getProperty("tmdb.api.key", "") ?: ""
+val tmdbApiKey = localProperties.getProperty("tmdb.api.key", "")
 
 android {
     namespace = "com.creativemedialabs.auraplay.core.network"
@@ -23,7 +23,7 @@ android {
     defaultConfig {
         minSdk = 24
 
-        buildConfigField("String", "TMDB_API_KEY", tmdbApiKey)
+        buildConfigField("String", "TMDB_API_KEY", "\"$tmdbApiKey\"")
     }
 
     compileOptions {

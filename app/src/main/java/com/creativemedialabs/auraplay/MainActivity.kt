@@ -14,6 +14,9 @@ import com.creativemedialabs.auraplay.feature.details.ui.DetailsScreen
 import com.creativemedialabs.auraplay.feature.home.ui.HomeScreen
 import com.creativemedialabs.auraplay.feature.player.ui.PlayerScreen
 import dagger.hilt.android.AndroidEntryPoint
+import java.net.URLEncoder
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -31,7 +34,7 @@ class MainActivity : ComponentActivity() {
                         composable("home") {
                             HomeScreen(
                                 onNavigateToDetails = { mediaId ->
-                                    navController.navigate("details/\$mediaId")
+                                    navController.navigate("details/$mediaId")
                                 }
                             )
                         }
@@ -40,15 +43,16 @@ class MainActivity : ComponentActivity() {
                             DetailsScreen(
                                 mediaId = mediaId,
                                 onNavigateToPlayer = { url ->
-                                    // Normally you'd URL-encode the string or pass arguments via ViewModel
-                                    navController.navigate("player?url=\$url")
+                                    val encodedUrl = URLEncoder.encode(url, StandardCharsets.UTF_8.toString())
+                                    navController.navigate("player?url=$encodedUrl")
                                 }
                             )
                         }
                         composable("player?url={url}") { backStackEntry ->
                             val url = backStackEntry.arguments?.getString("url") ?: ""
+                            val decodedUrl = URLDecoder.decode(url, StandardCharsets.UTF_8.toString())
                             PlayerScreen(
-                                videoUrl = url,
+                                videoUrl = decodedUrl,
                                 onBack = { navController.popBackStack() }
                             )
                         }
