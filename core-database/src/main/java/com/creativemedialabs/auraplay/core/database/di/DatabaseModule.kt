@@ -24,7 +24,9 @@ object DatabaseModule {
             context,
             AuraDatabase::class.java,
             "auraplay.db"
-        ).build()
+        )
+        .fallbackToDestructiveMigration()
+        .build()
     }
 
     @Provides
@@ -35,4 +37,13 @@ object DatabaseModule {
 
     @Provides
     fun provideDownloadDao(database: AuraDatabase): DownloadDao = database.downloadDao()
+
+    @Provides
+    fun provideMonitoredSeriesDao(database: AuraDatabase): com.creativemedialabs.auraplay.core.database.dao.MonitoredSeriesDao =
+        database.monitoredSeriesDao()
+
+    @Provides
+    fun provideEpisodeDao(database: AuraDatabase): com.creativemedialabs.auraplay.core.database.dao.EpisodeDao =
+        database.episodeDao()
+
 }

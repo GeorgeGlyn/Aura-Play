@@ -34,4 +34,5 @@ dependencies {
     implementation(libs.ktor.serialization.kotlinx.json)
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
     implementation("org.jetbrains.kotlin:kotlin-reflect:1.9.22")
+    implementation(libs.okhttp)
 }

@@ -47,3 +47,55 @@ interface DownloadDao {
     @Query("DELETE FROM downloads WHERE mediaId = :mediaId")
     suspend fun deleteDownload(mediaId: Int)
 }
+
+@Dao
+interface MonitoredSeriesDao {
+    @Query("SELECT * FROM monitored_series ORDER BY lastCheckedTimestamp DESC")
+    fun getAllMonitoredSeries(): Flow<List<com.creativemedialabs.auraplay.core.database.entity.MonitoredSeriesEntity>>
+
+    @Query("SELECT * FROM monitored_series WHERE monitored = 1")
+    suspend fun getActiveMonitoredSeries(): List<com.creativemedialabs.auraplay.core.database.entity.MonitoredSeriesEntity>
+
+    @Query("SELECT * FROM monitored_series WHERE seriesId = :seriesId LIMIT 1")
+    fun getMonitoredSeriesFlow(seriesId: Int): Flow<com.creativemedialabs.auraplay.core.database.entity.MonitoredSeriesEntity?>
+
+    @Query("SELECT * FROM monitored_series WHERE seriesId = :seriesId LIMIT 1")
+    suspend fun getMonitoredSeries(seriesId: Int): com.creativemedialabs.auraplay.core.database.entity.MonitoredSeriesEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrUpdate(series: com.creativemedialabs.auraplay.core.database.entity.MonitoredSeriesEntity)
+
+    @Query("DELETE FROM monitored_series WHERE seriesId = :seriesId")
+    suspend fun deleteSeries(seriesId: Int)
+
+    @Query("UPDATE monitored_series SET lastCheckedTimestamp = :timestamp WHERE seriesId = :seriesId")
+    suspend fun updateLastChecked(seriesId: Int, timestamp: Long)
+}
+
+@Dao
+interface EpisodeDao {
+    @Query("SELECT * FROM episodes WHERE seriesId = :seriesId ORDER BY seasonNumber ASC, episodeNumber ASC")
+    fun getEpisodesForSeries(seriesId: Int): Flow<List<com.creativemedialabs.auraplay.core.database.entity.EpisodeEntity>>
+
+    @Query("SELECT * FROM episodes WHERE seriesId = :seriesId AND seasonNumber = :seasonNumber ORDER BY episodeNumber ASC")
+    fun getEpisodesForSeason(seriesId: Int, seasonNumber: Int): Flow<List<com.creativemedialabs.auraplay.core.database.entity.EpisodeEntity>>
+
+    @Query("SELECT * FROM episodes WHERE downloadStatus = 'MISSING'")
+    suspend fun getMissingEpisodes(): List<com.creativemedialabs.auraplay.core.database.entity.EpisodeEntity>
+
+    @Query("SELECT * FROM episodes WHERE seriesId = :seriesId AND seasonNumber = :seasonNumber AND episodeNumber = :episodeNumber LIMIT 1")
+    suspend fun getEpisode(seriesId: Int, seasonNumber: Int, episodeNumber: Int): com.creativemedialabs.auraplay.core.database.entity.EpisodeEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrUpdateAll(episodes: List<com.creativemedialabs.auraplay.core.database.entity.EpisodeEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrUpdate(episode: com.creativemedialabs.auraplay.core.database.entity.EpisodeEntity)
+
+    @Query("UPDATE episodes SET downloadStatus = :status, localFilePath = :localPath, progressPercentage = :progress WHERE seriesId = :seriesId AND seasonNumber = :seasonNumber AND episodeNumber = :episodeNumber")
+    suspend fun updateDownloadStatus(seriesId: Int, seasonNumber: Int, episodeNumber: Int, status: String, localPath: String? = null, progress: Int = 0)
+
+    @Query("DELETE FROM episodes WHERE seriesId = :seriesId")
+    suspend fun deleteEpisodesForSeries(seriesId: Int)
+}
+

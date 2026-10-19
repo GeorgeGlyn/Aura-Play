@@ -30,7 +30,9 @@ android {
 
 dependencies {
     implementation(project(":core-database"))
+    implementation(project(":core-network"))
     implementation(project(":core-player"))
+
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -48,4 +50,7 @@ dependencies {
 
     implementation(libs.work.runtime.ktx)
     implementation(libs.media3.exoplayer)
+    implementation(libs.okhttp)
+    implementation(libs.coil.compose)
+    implementation(libs.material.icons.extended)
 }

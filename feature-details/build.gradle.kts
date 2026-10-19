@@ -31,6 +31,9 @@ android {
 dependencies {
     implementation(project(":core-network"))
     implementation(project(":core-database"))
+    implementation(project(":feature-remote"))
+    implementation(project(":feature-downloads"))
+    implementation(libs.work.runtime.ktx)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
@@ -46,4 +49,5 @@ dependencies {
     implementation(libs.androidx.hilt.navigation.compose)
 
     implementation(libs.coil.compose)
+    implementation(libs.material.icons.extended)
 }
