@@ -101,6 +101,8 @@ fun WebStreamPlayer(
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var customView by remember { mutableStateOf<android.view.View?>(null) }
     var customViewCallback by remember { mutableStateOf<WebChromeClient.CustomViewCallback?>(null) }
+    var sniffedStreamUrl by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
 
     // Auto-hide top controls after 4 seconds
     LaunchedEffect(showOverlay) {
@@ -183,6 +185,15 @@ fun WebStreamPlayer(
                                 val reqUrl = request?.url?.toString() ?: return null
                                 if (AuraAdBlocker.isAdUrl(reqUrl)) {
                                     return AuraAdBlocker.createEmptyResourceResponse()
+                                }
+                                val lower = reqUrl.lowercase()
+                                if ((lower.contains(".m3u8") || lower.contains("/hls/") || lower.contains(".mp4")) &&
+                                    !lower.contains("220884") && !lower.contains("abuse") && !lower.contains("preview")
+                                ) {
+                                    if (sniffedStreamUrl == null) {
+                                        sniffedStreamUrl = reqUrl
+                                        Log.d("WebStreamPlayer", "Sniffed direct stream: $reqUrl")
+                                    }
                                 }
                                 return super.shouldInterceptRequest(view, request)
                             }
@@ -316,10 +327,29 @@ fun WebStreamPlayer(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "Ad-Blocked • 1080p FHD • Zero Config",
+                        text = if (sniffedStreamUrl != null) "Ad-Blocked • 1080p FHD • Direct Stream Ready" else "Ad-Blocked • 1080p FHD • Zero Config",
                         color = Color(0xFF4CAF50),
                         fontSize = 11.sp
                     )
+                }
+
+                if (sniffedStreamUrl != null) {
+                    IconButton(
+                        onClick = {
+                            val clip = android.content.ClipData.newPlainText("Direct Stream URL", sniffedStreamUrl)
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                            clipboard?.setPrimaryClip(clip)
+                            android.widget.Toast.makeText(context, "Direct offline stream captured!", android.widget.Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.background(Color(0xFFE50914), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Download,
+                            contentDescription = "Direct Stream Captured",
+                            tint = Color.White
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
                 }
 
                 IconButton(

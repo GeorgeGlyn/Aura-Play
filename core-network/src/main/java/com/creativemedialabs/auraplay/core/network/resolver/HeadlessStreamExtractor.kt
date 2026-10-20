@@ -1,7 +1,9 @@
 package com.creativemedialabs.auraplay.core.network.resolver
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.util.Log
+import android.webkit.JavascriptInterface
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
@@ -17,7 +19,7 @@ import javax.inject.Singleton
 /**
  * Intelligent Headless Stream Sniffer & Bypass Engine.
  * Extracts direct downloadable HLS (.m3u8) and MP4/MKV streams from web player embeds
- * (AutoEmbed, VidSrc, VidLink) by intercepting background network calls.
+ * (AutoEmbed, VidSrc, VidLink) by intercepting background network calls and video element sources.
  */
 @Singleton
 class HeadlessStreamExtractor @Inject constructor(
@@ -26,6 +28,18 @@ class HeadlessStreamExtractor @Inject constructor(
     companion object {
         private const val TAG = "HeadlessStreamSniffer"
         private const val EXTRACTION_TIMEOUT_MS = 14000L
+        private const val MOBILE_UA = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+    }
+
+    private class AuraStreamBridge(
+        private val onStreamDiscovered: (String) -> Unit
+    ) {
+        @JavascriptInterface
+        fun onStreamFound(url: String) {
+            if (url.isNotBlank()) {
+                onStreamDiscovered(url)
+            }
+        }
     }
 
     suspend fun extractDirectStream(embedUrl: String): Result<ResolvedStream> = withContext(Dispatchers.Main) {
@@ -34,16 +48,55 @@ class HeadlessStreamExtractor @Inject constructor(
 
         try {
             webView = WebView(context).apply {
+                // Layout to valid dimensions so Chromium activates viewport rendering and timers
+                layout(0, 0, 1080, 1920)
+
                 settings.apply {
                     javaScriptEnabled = true
                     domStorageEnabled = true
+                    databaseEnabled = true
                     mediaPlaybackRequiresUserGesture = false
-                    loadsImagesAutomatically = false
-                    blockNetworkImage = true
-                    userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                    loadsImagesAutomatically = true
+                    blockNetworkImage = false
+                    allowFileAccess = true
+                    allowContentAccess = true
+                    userAgentString = MOBILE_UA
                 }
 
+                addJavascriptInterface(
+                    AuraStreamBridge { sniffedUrl ->
+                        if (!deferred.isCompleted) {
+                            val lower = sniffedUrl.lowercase()
+                            if ((lower.contains(".m3u8") || lower.contains("/hls/") || lower.contains(".mp4")) &&
+                                !lower.contains("220884") && !lower.contains("abuse") && !lower.contains("preview")
+                            ) {
+                                Log.d(TAG, "Bridge captured stream: $sniffedUrl")
+                                deferred.complete(
+                                    ResolvedStream(
+                                        videoUrl = sniffedUrl,
+                                        headers = mapOf(
+                                            "Referer" to embedUrl,
+                                            "User-Agent" to MOBILE_UA
+                                        )
+                                    )
+                                )
+                            }
+                        }
+                    },
+                    "AuraBridge"
+                )
+
                 webViewClient = object : WebViewClient() {
+                    override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                        super.onPageStarted(view, url, favicon)
+                        injectAutoPlay(view)
+                    }
+
+                    override fun onPageFinished(view: WebView?, url: String?) {
+                        super.onPageFinished(view, url)
+                        injectAutoPlay(view)
+                    }
+
                     override fun shouldInterceptRequest(
                         view: WebView?,
                         request: WebResourceRequest?
@@ -71,7 +124,7 @@ class HeadlessStreamExtractor @Inject constructor(
                                 headers["Referer"] = embedUrl
                             }
                             if (!headers.containsKey("User-Agent")) {
-                                headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                                headers["User-Agent"] = MOBILE_UA
                             }
                             deferred.complete(ResolvedStream(videoUrl = url, headers = headers))
                         }
@@ -102,6 +155,35 @@ class HeadlessStreamExtractor @Inject constructor(
                 webView?.destroy()
             } catch (ignored: Exception) {}
         }
+    }
+
+    private fun injectAutoPlay(view: WebView?) {
+        view?.evaluateJavascript(
+            """
+            (function() {
+                function triggerPlayback() {
+                    try {
+                        document.querySelectorAll('video').forEach(function(v) {
+                            if (v.src && window.AuraBridge) {
+                                window.AuraBridge.onStreamFound(v.src);
+                            }
+                            v.querySelectorAll('source').forEach(function(s) {
+                                if (s.src && window.AuraBridge) window.AuraBridge.onStreamFound(s.src);
+                            });
+                            v.muted = true;
+                            const p = v.play();
+                            if (p) p.catch(function(){});
+                        });
+                        const btns = document.querySelectorAll('button, .play, .jw-display-icon-container, .vjs-big-play-button, .play-button, [aria-label*="Play"]');
+                        btns.forEach(function(b) { b.click(); });
+                    } catch(e) {}
+                }
+                triggerPlayback();
+                setInterval(triggerPlayback, 500);
+            })();
+            """.trimIndent(),
+            null
+        )
     }
 
     private fun isAdOrTracker(url: String): Boolean {

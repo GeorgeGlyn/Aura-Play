@@ -408,7 +408,7 @@ fun DownloadsScreen(
 
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "💡 Note: TorBox offers a 100% FREE plan ($0/month) with 10 free downloads per month at torbox.app. Real-Debrid and AllDebrid are also supported for high-speed 4K/1080p caching. AuraPlay also includes built-in free web streams and headless bypass sniffer.",
+                            text = "💡 Note: Debrid providers (Real-Debrid, TorBox, AllDebrid) are optional third-party services that require their own subscription. AuraPlay includes built-in Direct Offline Download & Free Web Streams without requiring any paid account or token.",
                             color = Color(0xFF4CAF50),
                             fontSize = 11.sp,
                             lineHeight = 15.sp
@@ -583,14 +583,14 @@ private fun DownloadItem(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
-                                    Icons.Default.CloudDownload,
+                                    Icons.Default.Settings,
                                     contentDescription = null,
                                     tint = Color(0xFFFF6B6B),
                                     modifier = Modifier.size(13.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = "Enable Debrid ($0 Free)",
+                                    text = "Stream Options",
                                     color = Color(0xFFFF6B6B),
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold
@@ -646,8 +646,8 @@ private fun DownloadItem(
             } else if (download.downloadStatus.startsWith("FAILED")) {
                 IconButton(onClick = onOpenDebrid) {
                     Icon(
-                        Icons.Default.CloudDownload,
-                        contentDescription = "Setup Debrid ($0 Free)",
+                        Icons.Default.Settings,
+                        contentDescription = "Stream Options",
                         tint = Color(0xFFE50914),
                         modifier = Modifier.size(22.dp)
                     )

@@ -488,7 +488,7 @@ class ModularMediaResolver(
             }
         }
 
-        Result.failure(Exception("Direct offline download is not available for this stream source. Online streaming is available with zero ads, or connect a Free TorBox ($0/mo) or Real-Debrid account in Downloads for 4K direct downloads."))
+        Result.failure(Exception("Direct stream could not be extracted for offline download. You can stream this title online instantly in AuraPlay with zero ads!"))
     }
 
     override suspend fun searchReleases(
