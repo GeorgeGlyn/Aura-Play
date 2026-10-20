@@ -42,6 +42,8 @@ class MediaDownloadWorker @AssistedInject constructor(
         const val KEY_EPISODE_NAME = "episodeName"
         const val PROGRESS_KEY = "progress"
         const val SPEED_KEY = "speed"
+        const val KEY_REFERER = "referer"
+        const val KEY_USER_AGENT = "userAgent"
 
         fun isWebEmbedUrl(url: String): Boolean {
             val lower = url.lowercase()
@@ -72,6 +74,26 @@ class MediaDownloadWorker @AssistedInject constructor(
             Log.e(TAG, "Cannot download web embed URL directly: $videoUrl")
             markFailed(mediaId, mediaType, title, posterPath, seriesId, seasonNumber, episodeNumber)
             return@withContext Result.failure()
+        }
+
+        val inputReferer = inputData.getString(KEY_REFERER)
+        val inputUserAgent = inputData.getString(KEY_USER_AGENT)
+        val referer = when {
+            !inputReferer.isNullOrBlank() -> inputReferer
+            videoUrl.contains("net52") || videoUrl.contains("nm-cdn") || videoUrl.contains("freecdn") || videoUrl.contains("imgcdn") -> "https://net52.cc"
+            else -> {
+                try {
+                    val uri = URI(videoUrl)
+                    if (uri.scheme != null && uri.host != null) "${uri.scheme}://${uri.host}" else "https://net52.cc"
+                } catch (e: Exception) {
+                    "https://net52.cc"
+                }
+            }
+        }
+        val userAgent = if (!inputUserAgent.isNullOrBlank()) {
+            inputUserAgent
+        } else {
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }
 
         val isHls = videoUrl.contains(".m3u8", ignoreCase = true)
@@ -133,7 +155,20 @@ class MediaDownloadWorker @AssistedInject constructor(
 
             // If the stream is an HLS playlist (.m3u8), download its video chunks directly
             if (isHls) {
-                downloadHlsStream(client, videoUrl, outputFile, mediaId, mediaType, title, posterPath, seriesId, seasonNumber, episodeNumber)
+                downloadHlsStream(
+                    client = client,
+                    m3u8Url = videoUrl,
+                    outputFile = outputFile,
+                    mediaId = mediaId,
+                    mediaType = mediaType,
+                    title = title,
+                    posterPath = posterPath,
+                    seriesId = seriesId,
+                    seasonNumber = seasonNumber,
+                    episodeNumber = episodeNumber,
+                    referer = referer,
+                    userAgent = userAgent
+                )
                 if (outputFile.exists() && outputFile.length() > 500 * 1024) {
                     markCompleted(mediaId, mediaType, title, posterPath, outputFile, seriesId, seasonNumber, episodeNumber)
                     return@withContext Result.success(Data.Builder().putString("filePath", outputFile.absolutePath).build())
@@ -148,10 +183,8 @@ class MediaDownloadWorker @AssistedInject constructor(
             val existingBytes = if (outputFile.exists()) outputFile.length() else 0L
             val requestBuilder = Request.Builder()
                 .url(videoUrl)
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-            if (videoUrl.contains("net52") || videoUrl.contains("nm-cdn") || videoUrl.contains("freecdn") || videoUrl.contains("imgcdn")) {
-                requestBuilder.header("Referer", "https://net52.cc")
-            }
+                .header("User-Agent", userAgent)
+                .header("Referer", referer)
 
             val isResuming = existingBytes > 0L
             if (isResuming) {
@@ -357,12 +390,14 @@ class MediaDownloadWorker @AssistedInject constructor(
         posterPath: String?,
         seriesId: Int,
         seasonNumber: Int,
-        episodeNumber: Int
+        episodeNumber: Int,
+        referer: String,
+        userAgent: String
     ) {
         val req = Request.Builder()
             .url(m3u8Url)
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-            .header("Referer", "https://net52.cc")
+            .header("User-Agent", userAgent)
+            .header("Referer", referer)
             .build()
         val resp = client.newCall(req).execute()
         if (!resp.isSuccessful) throw Exception("Failed to fetch m3u8 playlist (${resp.code})")
@@ -404,8 +439,8 @@ class MediaDownloadWorker @AssistedInject constructor(
         val segmentContent = if (targetVariant != m3u8Url) {
             val vReq = Request.Builder()
                 .url(targetVariant)
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                .header("Referer", "https://net52.cc")
+                .header("User-Agent", userAgent)
+                .header("Referer", referer)
                 .build()
             val vResp = client.newCall(vReq).execute()
             if (!vResp.isSuccessful) throw Exception("Failed to fetch HLS variant playlist (${vResp.code})")
@@ -434,8 +469,8 @@ class MediaDownloadWorker @AssistedInject constructor(
                 val segUrl = resolveRelativeUrl(targetVariant, seg)
                 val segReq = Request.Builder()
                     .url(segUrl)
-                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                    .header("Referer", "https://net52.cc")
+                    .header("User-Agent", userAgent)
+                    .header("Referer", referer)
                     .build()
 
                 var segResp = client.newCall(segReq).execute()

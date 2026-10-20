@@ -265,6 +265,10 @@ class DetailsViewModel @Inject constructor(
                         .putInt(MediaDownloadWorker.KEY_SEASON_NUMBER, episode.seasonNumber)
                         .putInt(MediaDownloadWorker.KEY_EPISODE_NUMBER, episode.episodeNumber)
                         .putString(MediaDownloadWorker.KEY_EPISODE_NAME, episode.name)
+                        .apply {
+                            stream.headers["Referer"]?.let { putString(MediaDownloadWorker.KEY_REFERER, it) }
+                            stream.headers["User-Agent"]?.let { putString(MediaDownloadWorker.KEY_USER_AGENT, it) }
+                        }
                         .build()
 
                     val downloadWork = OneTimeWorkRequestBuilder<MediaDownloadWorker>()
@@ -366,6 +370,8 @@ class DetailsViewModel @Inject constructor(
                                 putInt(MediaDownloadWorker.KEY_SEASON_NUMBER, seasonNum)
                                 putInt(MediaDownloadWorker.KEY_EPISODE_NUMBER, episodeNum)
                             }
+                            stream.headers["Referer"]?.let { putString(MediaDownloadWorker.KEY_REFERER, it) }
+                            stream.headers["User-Agent"]?.let { putString(MediaDownloadWorker.KEY_USER_AGENT, it) }
                         }
                         .build()
 

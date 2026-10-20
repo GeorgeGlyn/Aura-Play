@@ -64,6 +64,7 @@ object NetworkModule {
         repository: com.creativemedialabs.auraplay.core.network.repository.TmdbRepository,
         torBoxClient: com.creativemedialabs.auraplay.core.network.torbox.TorBoxClient,
         netMirrorClient: com.creativemedialabs.auraplay.core.network.netmirror.NetMirrorClient,
+        headlessStreamExtractor: com.creativemedialabs.auraplay.core.network.resolver.HeadlessStreamExtractor,
         okHttpClient: OkHttpClient
     ): MediaResolver {
         return com.creativemedialabs.auraplay.core.network.resolver.ModularMediaResolver(
@@ -77,6 +78,7 @@ object NetworkModule {
             repository = repository,
             torBoxClient = torBoxClient,
             netMirrorClient = netMirrorClient,
+            headlessStreamExtractor = headlessStreamExtractor,
             client = okHttpClient
         )
     }

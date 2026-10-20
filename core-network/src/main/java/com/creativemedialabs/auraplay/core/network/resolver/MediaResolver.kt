@@ -314,6 +314,7 @@ class ModularMediaResolver(
     private val repository: TmdbRepository,
     private val torBoxClient: com.creativemedialabs.auraplay.core.network.torbox.TorBoxClient,
     private val netMirrorClient: com.creativemedialabs.auraplay.core.network.netmirror.NetMirrorClient,
+    private val headlessStreamExtractor: HeadlessStreamExtractor,
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
@@ -457,7 +458,37 @@ class ModularMediaResolver(
             }
         }
 
-        Result.failure(Exception("Direct offline download is not available for this stream source. Online streaming is available with zero ads."))
+        // 4. Try Headless Stream Sniffer on verified embed stream providers (AutoEmbed, VidSrc, VidLink)
+        val embedCandidates = if (mediaType == "tv" && seasonNumber != null && episodeNumber != null) {
+            listOf(
+                "https://autoembed.co/tv/tmdb/$tmdbId-$seasonNumber-$episodeNumber",
+                "https://vidsrc.cc/v2/embed/tv/$tmdbId/$seasonNumber/$episodeNumber",
+                "https://vidlink.pro/tv/$tmdbId/$seasonNumber/$episodeNumber?autoplay=true"
+            )
+        } else {
+            listOf(
+                "https://autoembed.co/movie/tmdb/$tmdbId",
+                "https://vidsrc.cc/v2/embed/movie/$tmdbId",
+                "https://vidlink.pro/movie/$tmdbId?autoplay=true"
+            )
+        }
+
+        for (embedUrl in embedCandidates) {
+            try {
+                val sniffRes = headlessStreamExtractor.extractDirectStream(embedUrl)
+                if (sniffRes.isSuccess) {
+                    val stream = sniffRes.getOrThrow()
+                    if (stream.videoUrl.isNotBlank() && !isWebEmbed(stream.videoUrl)) {
+                        Log.d("ModularMediaResolver", "Successfully sniffed direct download stream: ${stream.videoUrl}")
+                        return@withContext Result.success(stream)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w("ModularMediaResolver", "Sniffer error for $embedUrl: ${e.message}")
+            }
+        }
+
+        Result.failure(Exception("Direct offline download is not available for this stream source. Online streaming is available with zero ads, or connect a Free TorBox ($0/mo) or Real-Debrid account in Downloads for 4K direct downloads."))
     }
 
     override suspend fun searchReleases(

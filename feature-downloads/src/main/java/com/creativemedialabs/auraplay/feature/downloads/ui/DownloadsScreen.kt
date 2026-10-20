@@ -198,7 +198,8 @@ fun DownloadsScreen(
                             DownloadItem(
                                 download = download,
                                 onPlay = { onPlayDownload(download.localFilePath) },
-                                onDelete = { viewModel.deleteDownload(download) }
+                                onDelete = { viewModel.deleteDownload(download) },
+                                onOpenDebrid = { showDebridDialog = true }
                             )
                         }
                     }
@@ -407,7 +408,7 @@ fun DownloadsScreen(
 
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "💡 Note: Debrid streaming APIs (TorBox / Real-Debrid) require paid subscriptions on their platforms. AuraPlay includes built-in 100% Free Instant Web Streams and VLC torrent opening without requiring any paid account or token.",
+                            text = "💡 Note: TorBox offers a 100% FREE plan ($0/month) with 10 free downloads per month at torbox.app. Real-Debrid and AllDebrid are also supported for high-speed 4K/1080p caching. AuraPlay also includes built-in free web streams and headless bypass sniffer.",
                             color = Color(0xFF4CAF50),
                             fontSize = 11.sp,
                             lineHeight = 15.sp
@@ -448,7 +449,8 @@ fun DownloadsScreen(
 private fun DownloadItem(
     download: DownloadEntity,
     onPlay: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onOpenDebrid: () -> Unit = {}
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val localFile = remember(download.localFilePath) { java.io.File(download.localFilePath) }
@@ -571,6 +573,29 @@ private fun DownloadItem(
                                 overflow = TextOverflow.Ellipsis,
                                 lineHeight = 15.sp
                             )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(Color(0x33E50914))
+                                    .clickable { onOpenDebrid() }
+                                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.CloudDownload,
+                                    contentDescription = null,
+                                    tint = Color(0xFFFF6B6B),
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Enable Debrid ($0 Free)",
+                                    color = Color(0xFFFF6B6B),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                     } else {
                         Text(
@@ -619,15 +644,12 @@ private fun DownloadItem(
                     )
                 }
             } else if (download.downloadStatus.startsWith("FAILED")) {
-                IconButton(onClick = {
-                    val reason = download.downloadStatus.removePrefix("FAILED: ").ifBlank { "Stream unavailable for offline download. Play online with zero ads or configure Debrid in Settings." }
-                    android.widget.Toast.makeText(context, reason, android.widget.Toast.LENGTH_LONG).show()
-                }) {
+                IconButton(onClick = onOpenDebrid) {
                     Icon(
-                        Icons.Default.Info,
-                        contentDescription = "Error info",
+                        Icons.Default.CloudDownload,
+                        contentDescription = "Setup Debrid ($0 Free)",
                         tint = Color(0xFFE50914),
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(22.dp)
                     )
                 }
             }
