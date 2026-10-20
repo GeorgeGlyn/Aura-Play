@@ -106,6 +106,25 @@ class TmdbRepository @Inject constructor(
             null
         }
     }
+
+    suspend fun searchMulti(query: String, page: Int = 1): Result<List<com.creativemedialabs.auraplay.core.network.model.TmdbMediaItem>> = withContext(Dispatchers.IO) {
+        try {
+            if (query.isBlank()) return@withContext Result.success(emptyList())
+            val response = api.searchMulti(
+                apiKey = BuildConfig.TMDB_API_KEY,
+                query = query,
+                page = page
+            )
+            // Filter to only items that have a poster and are movies or tv shows
+            val validItems = response.results.filter { item ->
+                (item.mediaType == "movie" || item.mediaType == "tv" || item.title != null || item.name != null) &&
+                !item.posterPath.isNullOrBlank()
+            }
+            Result.success(validItems)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }
 
 

@@ -53,6 +53,9 @@ import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
 
 private fun isWebStream(url: String): Boolean {
+    if (url.startsWith("/") || url.startsWith("file://")) {
+        return false
+    }
     val clean = url.substringBefore('?').lowercase()
     if (clean.endsWith(".mp4") || clean.endsWith(".m3u8") || clean.endsWith(".mkv") || clean.endsWith(".mpd") || url.contains(".m3u8")) {
         return false
@@ -338,7 +341,12 @@ fun ExoPlayerStreamPlayer(
             .build()
             .apply {
                 try {
-                    setMediaItem(MediaItem.fromUri(videoUrl))
+                    val uri = if (videoUrl.startsWith("/")) {
+                        android.net.Uri.fromFile(java.io.File(videoUrl))
+                    } else {
+                        android.net.Uri.parse(videoUrl)
+                    }
+                    setMediaItem(MediaItem.fromUri(uri))
                     prepare()
                     playWhenReady = true
                 } catch (e: Exception) {

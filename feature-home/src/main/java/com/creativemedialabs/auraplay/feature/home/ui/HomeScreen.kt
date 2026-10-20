@@ -40,6 +40,7 @@ private const val TMDB_BACKDROP_BASE = "https://image.tmdb.org/t/p/w1280"
 @Composable
 fun HomeScreen(
     onNavigateToDetails: (Int) -> Unit,
+    onNavigateToSearch: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -204,7 +205,8 @@ fun HomeScreen(
         TopGlassmorphicNavBar(
             selectedCategory = uiState.selectedCategory,
             categories = categories,
-            onCategorySelected = { viewModel.selectCategory(it) }
+            onCategorySelected = { viewModel.selectCategory(it) },
+            onSearchClick = onNavigateToSearch
         )
     }
 }
@@ -213,7 +215,8 @@ fun HomeScreen(
 private fun TopGlassmorphicNavBar(
     selectedCategory: String,
     categories: List<String>,
-    onCategorySelected: (String) -> Unit
+    onCategorySelected: (String) -> Unit,
+    onSearchClick: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -256,7 +259,7 @@ private fun TopGlassmorphicNavBar(
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = {}) {
+                IconButton(onClick = onSearchClick) {
                     Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.White)
                 }
                 Spacer(modifier = Modifier.width(4.dp))

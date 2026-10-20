@@ -67,6 +67,15 @@ interface TmdbApi {
         @Path("media_id") mediaId: Int,
         @Query("api_key") apiKey: String
     ): com.creativemedialabs.auraplay.core.network.model.ExternalIdsResponse
+
+    @GET("search/multi")
+    suspend fun searchMulti(
+        @Query("api_key") apiKey: String,
+        @Query("query") query: String,
+        @Query("page") page: Int = 1,
+        @Query("language") language: String = "en-US",
+        @Query("include_adult") includeAdult: Boolean = false
+    ): TrendingResponse
 }
 
 

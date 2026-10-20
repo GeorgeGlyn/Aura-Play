@@ -104,7 +104,20 @@ class MediaDownloadWorker @AssistedInject constructor(
                 .readTimeout(60, TimeUnit.SECONDS)
                 .build()
 
-            val requestBuilder = Request.Builder().url(videoUrl)
+            // If the stream is an HLS playlist (.m3u8), download its video chunks directly
+            if (videoUrl.contains(".m3u8")) {
+                downloadHlsStream(client, videoUrl, outputFile, mediaId, mediaType, title, posterPath, seriesId, seasonNumber, episodeNumber)
+                markCompleted(mediaId, mediaType, title, posterPath, outputFile, seriesId, seasonNumber, episodeNumber)
+                return@withContext Result.success(Data.Builder().putString("filePath", outputFile.absolutePath).build())
+            }
+
+            val requestBuilder = Request.Builder()
+                .url(videoUrl)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            if (videoUrl.contains("net52") || videoUrl.contains("nm-cdn") || videoUrl.contains("freecdn") || videoUrl.contains("imgcdn")) {
+                requestBuilder.header("Referer", "https://net52.cc")
+            }
+
             val isResuming = existingBytes > 0L
             if (isResuming) {
                 requestBuilder.header("Range", "bytes=$existingBytes-")
@@ -271,10 +284,104 @@ class MediaDownloadWorker @AssistedInject constructor(
         }
     }
 
+    private suspend fun downloadHlsStream(
+        client: OkHttpClient,
+        m3u8Url: String,
+        outputFile: File,
+        mediaId: Int,
+        mediaType: String,
+        title: String,
+        posterPath: String?,
+        seriesId: Int,
+        seasonNumber: Int,
+        episodeNumber: Int
+    ) {
+        val req = Request.Builder()
+            .url(m3u8Url)
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            .header("Referer", "https://net52.cc")
+            .build()
+        val resp = client.newCall(req).execute()
+        if (!resp.isSuccessful) throw Exception("Failed to fetch m3u8 playlist")
+        val content = resp.body?.string().orEmpty()
+
+        val baseUrl = m3u8Url.substringBeforeLast("/") + "/"
+
+        // Check if master playlist
+        val targetVariant = if (content.contains("#EXT-X-STREAM-INF")) {
+            val variant = content.lines().firstOrNull { it.contains("1080p") }
+                ?: content.lines().firstOrNull { it.contains("720p") }
+                ?: content.lines().firstOrNull { it.startsWith("http") || it.endsWith(".m3u8") }
+            if (variant != null) {
+                if (variant.startsWith("http")) variant else baseUrl + variant
+            } else m3u8Url
+        } else {
+            m3u8Url
+        }
+
+        // Fetch segment playlist if changed
+        val segmentContent = if (targetVariant != m3u8Url) {
+            val vReq = Request.Builder()
+                .url(targetVariant)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .header("Referer", "https://net52.cc")
+                .build()
+            client.newCall(vReq).execute().body?.string().orEmpty()
+        } else {
+            content
+        }
+
+        val segmentBaseUrl = targetVariant.substringBeforeLast("/") + "/"
+        val segmentLines = segmentContent.lines()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && !it.startsWith("#") }
+
+        if (segmentLines.isEmpty()) throw Exception("No segments in HLS playlist")
+
+        val totalSegments = segmentLines.size
+        var completedSegments = 0
+        val appendMode = outputFile.exists() && outputFile.length() > 0
+
+        FileOutputStream(outputFile, appendMode).use { outStream ->
+            for (seg in segmentLines) {
+                val segUrl = if (seg.startsWith("http")) seg else segmentBaseUrl + seg
+                val segReq = Request.Builder()
+                    .url(segUrl)
+                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                    .header("Referer", "https://net52.cc")
+                    .build()
+                val segResp = client.newCall(segReq).execute()
+                if (segResp.isSuccessful) {
+                    segResp.body?.byteStream()?.use { inStream ->
+                        inStream.copyTo(outStream)
+                    }
+                }
+                completedSegments++
+                val progress = ((completedSegments.toFloat() / totalSegments) * 100).toInt().coerceIn(0, 100)
+
+                if (completedSegments % 5 == 0 || completedSegments == totalSegments) {
+                    val displayTitle = if (seriesId > 0) "$title S${String.format("%02d", seasonNumber)}E${String.format("%02d", episodeNumber)}" else title
+                    downloadDao.insertOrUpdate(
+                        DownloadEntity(
+                            mediaId = mediaId,
+                            mediaType = mediaType,
+                            title = displayTitle,
+                            localFilePath = outputFile.absolutePath,
+                            posterPath = posterPath,
+                            downloadStatus = if (completedSegments == totalSegments) "COMPLETED" else "DOWNLOADING",
+                            progressPercentage = progress
+                        )
+                    )
+                    setProgress(workDataOf(PROGRESS_KEY to progress, SPEED_KEY to "$completedSegments/$totalSegments chunks"))
+                }
+            }
+        }
+    }
+
     private fun formatSpeed(bytesPerSec: Long): String {
         return when {
-            bytesPerSec >= 1024 * 1024 -> String.format("%.1f MB/s", bytesPerSec.toFloat() / (1024 * 1024))
-            bytesPerSec >= 1024 -> String.format("%.0f KB/s", bytesPerSec.toFloat() / 1024)
+            bytesPerSec >= 1024 * 1024 -> String.format(java.util.Locale.US, "%.1f MB/s", bytesPerSec / (1024f * 1024f))
+            bytesPerSec >= 1024 -> String.format(java.util.Locale.US, "%.1f KB/s", bytesPerSec / 1024f)
             else -> "$bytesPerSec B/s"
         }
     }
