@@ -62,6 +62,7 @@ fun DetailsScreen(
     val isInWatchlist by viewModel.isInWatchlist.collectAsState()
     val isMonitored by viewModel.isMonitored.collectAsState()
     val episodesFromDb by viewModel.episodesFromDb.collectAsState()
+    val currentDownload by viewModel.currentDownload.collectAsState()
     val discoveredTvs by viewModel.discoveredTvs.collectAsState()
     val context = LocalContext.current
 
@@ -77,6 +78,10 @@ fun DetailsScreen(
         onDispose {
             viewModel.stopTvDiscovery()
         }
+    }
+
+    if (onBack != null) {
+        androidx.activity.compose.BackHandler(onBack = onBack)
     }
 
     Box(
@@ -256,10 +261,19 @@ fun DetailsScreen(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     // 3. Primary Big Action Buttons (Netflix Style)
+                    val isMovieDownloaded = currentDownload?.downloadStatus == "COMPLETED" &&
+                        currentDownload?.localFilePath?.let { java.io.File(it).exists() && java.io.File(it).length() > 500 * 1024 } == true
+                    val isMovieDownloading = currentDownload?.downloadStatus == "DOWNLOADING"
+                    val movieDownloadProgress = currentDownload?.progressPercentage ?: 0
+
                     // Big Solid White "Play" Button
                     Button(
                         onClick = {
-                            viewModel.resolveAndPlay { url -> onNavigateToPlayer(url) }
+                            if (isMovieDownloaded && !currentDownload?.localFilePath.isNullOrBlank()) {
+                                onNavigateToPlayer(currentDownload!!.localFilePath)
+                            } else {
+                                viewModel.resolveAndPlay { url -> onNavigateToPlayer(url) }
+                            }
                         },
                         enabled = !uiState.isResolvingStream,
                         colors = ButtonDefaults.buttonColors(
@@ -280,7 +294,7 @@ fun DetailsScreen(
                         } else {
                             Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.Black)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Play", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            Text(if (isMovieDownloaded) "Play Offline" else "Play", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                         }
                     }
 
@@ -288,9 +302,16 @@ fun DetailsScreen(
 
                     // Secondary Dark "Download" Button
                     Button(
-                        onClick = { viewModel.startDownload(context) },
+                        onClick = {
+                            if (isMovieDownloaded && !currentDownload?.localFilePath.isNullOrBlank()) {
+                                onNavigateToPlayer(currentDownload!!.localFilePath)
+                            } else if (!isMovieDownloading) {
+                                viewModel.startDownload(context)
+                            }
+                        },
+                        enabled = !isMovieDownloading,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF262626),
+                            containerColor = if (isMovieDownloaded) Color(0xFF1B5E20) else Color(0xFF262626),
                             contentColor = Color.White
                         ),
                         shape = RoundedCornerShape(6.dp),
@@ -298,9 +319,23 @@ fun DetailsScreen(
                             .fillMaxWidth()
                             .height(48.dp)
                     ) {
-                        Icon(Icons.Default.Download, contentDescription = null, tint = Color.White)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Download", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                        if (isMovieDownloading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                color = Color(0xFFE50914),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Downloading $movieDownloadProgress%", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                        } else if (isMovieDownloaded) {
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF4CAF50))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Downloaded • Play Offline", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                        } else {
+                            Icon(Icons.Default.Download, contentDescription = null, tint = Color.White)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Download", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(18.dp))
@@ -511,6 +546,11 @@ fun DetailsScreen(
                                                 modifier = Modifier.fillMaxWidth(),
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
+                                                val isEpDownloaded = dbEp?.downloadStatus == "DOWNLOADED" &&
+                                                    dbEp.localFilePath?.let { java.io.File(it).exists() && java.io.File(it).length() > 500 * 1024 } == true
+                                                val isEpDownloading = dbEp?.downloadStatus == "DOWNLOADING"
+                                                val epProgress = dbEp?.progressPercentage ?: 0
+
                                                 // Episode Thumbnail with Play Overlay
                                                 Box(
                                                     modifier = Modifier
@@ -518,7 +558,11 @@ fun DetailsScreen(
                                                         .clip(RoundedCornerShape(6.dp))
                                                         .background(Color(0xFF202020))
                                                         .clickable {
-                                                            viewModel.resolveAndPlayEpisode(ep) { url -> onNavigateToPlayer(url) }
+                                                            if (isEpDownloaded && !dbEp?.localFilePath.isNullOrBlank()) {
+                                                                onNavigateToPlayer(dbEp!!.localFilePath!!)
+                                                            } else {
+                                                                viewModel.resolveAndPlayEpisode(ep) { url -> onNavigateToPlayer(url) }
+                                                            }
                                                         }
                                                 ) {
                                                     val thumb = ep.stillPath ?: detail.backdropPath ?: detail.posterPath
@@ -537,7 +581,7 @@ fun DetailsScreen(
                                                         Icon(
                                                             Icons.Default.PlayCircle,
                                                             contentDescription = "Play",
-                                                            tint = Color.White,
+                                                            tint = if (isEpDownloaded) Color(0xFF4CAF50) else Color.White,
                                                             modifier = Modifier.size(32.dp)
                                                         )
                                                     }
@@ -563,11 +607,11 @@ fun DetailsScreen(
                                                     )
 
                                                     // Status Chip
-                                                    val statusText = dbEp?.downloadStatus ?: "AVAILABLE"
-                                                    val statusColor = when (statusText) {
-                                                        "DOWNLOADED" -> Color(0xFF4CAF50)
-                                                        "DOWNLOADING" -> Color(0xFF2196F3)
-                                                        "QUEUED" -> Color(0xFFFF9800)
+                                                    val statusText = if (isEpDownloaded) "DOWNLOADED" else if (isEpDownloading) "DOWNLOADING $epProgress%" else (dbEp?.downloadStatus ?: "AVAILABLE")
+                                                    val statusColor = when {
+                                                        isEpDownloaded -> Color(0xFF4CAF50)
+                                                        isEpDownloading -> Color(0xFF2196F3)
+                                                        dbEp?.downloadStatus == "QUEUED" -> Color(0xFFFF9800)
                                                         else -> Color(0xFF888888)
                                                     }
                                                     Text(
@@ -579,15 +623,17 @@ fun DetailsScreen(
                                                     )
                                                 }
 
-
-
                                                 // Download button
                                                 IconButton(
-                                                    onClick = { viewModel.downloadEpisode(context, ep) }
+                                                    onClick = {
+                                                        if (isEpDownloaded && !dbEp?.localFilePath.isNullOrBlank()) {
+                                                            onNavigateToPlayer(dbEp!!.localFilePath!!)
+                                                        } else if (!isEpDownloading) {
+                                                            viewModel.downloadEpisode(context, ep)
+                                                        }
+                                                    }
                                                 ) {
-                                                    val isDownloaded = dbEp?.downloadStatus == "DOWNLOADED"
-                                                    val isDownloading = dbEp?.downloadStatus == "DOWNLOADING"
-                                                    if (isDownloading) {
+                                                    if (isEpDownloading) {
                                                         CircularProgressIndicator(
                                                             modifier = Modifier.size(24.dp),
                                                             color = Color(0xFFE50914),
@@ -595,9 +641,9 @@ fun DetailsScreen(
                                                         )
                                                     } else {
                                                         Icon(
-                                                            imageVector = if (isDownloaded) Icons.Default.CheckCircle else Icons.Default.Download,
-                                                            contentDescription = "Download Episode",
-                                                            tint = if (isDownloaded) Color(0xFF4CAF50) else Color.White
+                                                            imageVector = if (isEpDownloaded) Icons.Default.CheckCircle else Icons.Default.Download,
+                                                            contentDescription = if (isEpDownloaded) "Play Offline" else "Download Episode",
+                                                            tint = if (isEpDownloaded) Color(0xFF4CAF50) else Color.White
                                                         )
                                                     }
                                                 }

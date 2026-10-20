@@ -159,7 +159,7 @@ class SeriesMonitorWorker @AssistedInject constructor(
     ) {
         Log.d(TAG, "Sonarr Engine: Attempting to resolve stream for ${seriesTitle} S${episode.seasonNumber}E${episode.episodeNumber} (${episode.name})")
 
-        val resolveResult = mediaResolver.resolveStream(
+        val resolveResult = mediaResolver.resolveDownloadStream(
             tmdbId = seriesId,
             mediaType = "tv",
             seasonNumber = episode.seasonNumber,

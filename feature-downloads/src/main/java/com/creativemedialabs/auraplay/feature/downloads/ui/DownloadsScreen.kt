@@ -198,7 +198,7 @@ fun DownloadsScreen(
                             DownloadItem(
                                 download = download,
                                 onPlay = { onPlayDownload(download.localFilePath) },
-                                onDelete = { viewModel.deleteDownload(download.mediaId) }
+                                onDelete = { viewModel.deleteDownload(download) }
                             )
                         }
                     }
@@ -450,6 +450,14 @@ private fun DownloadItem(
     onPlay: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val localFile = remember(download.localFilePath) { java.io.File(download.localFilePath) }
+    val fileExists = localFile.exists()
+    val fileSizeBytes = if (fileExists) localFile.length() else 0L
+    val isCompleted = download.downloadStatus == "COMPLETED"
+    val isDownloading = download.downloadStatus == "DOWNLOADING"
+    val isCorruptOrMissing = isCompleted && (!fileExists || fileSizeBytes < 100 * 1024)
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(10.dp),
@@ -487,11 +495,8 @@ private fun DownloadItem(
                 Spacer(modifier = Modifier.height(4.dp))
 
                 // Status chip
-                val isCompleted = download.downloadStatus == "COMPLETED"
-                val isDownloading = download.downloadStatus == "DOWNLOADING"
-
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (isCompleted) {
+                    if (isCompleted && !isCorruptOrMissing) {
                         Icon(
                             Icons.Default.FileDownloadDone,
                             contentDescription = null,
@@ -500,8 +505,22 @@ private fun DownloadItem(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "Downloaded • Ready Offline",
+                            text = "Downloaded • Ready Offline (${formatFileSize(fileSizeBytes)})",
                             color = Color(0xFF46D369),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    } else if (isCorruptOrMissing) {
+                        Icon(
+                            Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = Color(0xFFFF9800),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "File missing or corrupted",
+                            color = Color(0xFFFF9800),
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium
                         )
@@ -515,7 +534,7 @@ private fun DownloadItem(
                     } else {
                         Text(
                             text = download.downloadStatus,
-                            color = Color.Gray,
+                            color = if (download.downloadStatus == "FAILED") Color(0xFFE50914) else Color.Gray,
                             fontSize = 12.sp
                         )
                     }
@@ -538,13 +557,24 @@ private fun DownloadItem(
             Spacer(modifier = Modifier.width(8.dp))
 
             // Actions
-            if (download.downloadStatus == "COMPLETED") {
+            if (isCompleted && !isCorruptOrMissing) {
                 IconButton(onClick = onPlay) {
                     Icon(
                         Icons.Default.PlayArrow,
                         contentDescription = "Play",
                         tint = Color.White,
                         modifier = Modifier.size(28.dp)
+                    )
+                }
+            } else if (isCorruptOrMissing) {
+                IconButton(onClick = {
+                    android.widget.Toast.makeText(context, "Download file is missing or corrupted. Please delete and re-download.", android.widget.Toast.LENGTH_SHORT).show()
+                }) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = "Corrupt file",
+                        tint = Color(0xFFFF9800),
+                        modifier = Modifier.size(22.dp)
                     )
                 }
             }
@@ -558,5 +588,14 @@ private fun DownloadItem(
                 )
             }
         }
+    }
+}
+
+private fun formatFileSize(bytes: Long): String {
+    return when {
+        bytes >= 1024 * 1024 * 1024 -> String.format(java.util.Locale.US, "%.2f GB", bytes / (1024f * 1024f * 1024f))
+        bytes >= 1024 * 1024 -> String.format(java.util.Locale.US, "%.1f MB", bytes / (1024f * 1024f))
+        bytes >= 1024 -> String.format(java.util.Locale.US, "%.0f KB", bytes / 1024f)
+        else -> "$bytes B"
     }
 }

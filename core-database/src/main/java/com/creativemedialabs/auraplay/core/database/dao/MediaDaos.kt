@@ -44,6 +44,12 @@ interface DownloadDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdate(download: DownloadEntity)
 
+    @Query("SELECT * FROM downloads WHERE mediaId = :mediaId LIMIT 1")
+    fun getDownloadFlow(mediaId: Int): Flow<DownloadEntity?>
+
+    @Query("SELECT * FROM downloads WHERE mediaId = :mediaId LIMIT 1")
+    suspend fun getDownload(mediaId: Int): DownloadEntity?
+
     @Query("DELETE FROM downloads WHERE mediaId = :mediaId")
     suspend fun deleteDownload(mediaId: Int)
 }
@@ -94,6 +100,9 @@ interface EpisodeDao {
 
     @Query("UPDATE episodes SET downloadStatus = :status, localFilePath = :localPath, progressPercentage = :progress WHERE seriesId = :seriesId AND seasonNumber = :seasonNumber AND episodeNumber = :episodeNumber")
     suspend fun updateDownloadStatus(seriesId: Int, seasonNumber: Int, episodeNumber: Int, status: String, localPath: String? = null, progress: Int = 0)
+
+    @Query("UPDATE episodes SET downloadStatus = :status, localFilePath = NULL, progressPercentage = 0 WHERE localFilePath = :localPath")
+    suspend fun updateDownloadStatusByPath(localPath: String, status: String)
 
     @Query("DELETE FROM episodes WHERE seriesId = :seriesId")
     suspend fun deleteEpisodesForSeries(seriesId: Int)

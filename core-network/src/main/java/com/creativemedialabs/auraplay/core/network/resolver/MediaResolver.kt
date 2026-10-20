@@ -288,6 +288,13 @@ interface MediaResolver {
         episodeNumber: Int? = null
     ): Result<ResolvedStream>
 
+    suspend fun resolveDownloadStream(
+        tmdbId: Int,
+        mediaType: String,
+        seasonNumber: Int? = null,
+        episodeNumber: Int? = null
+    ): Result<ResolvedStream>
+
     suspend fun searchReleases(
         tmdbId: Int,
         mediaType: String,
@@ -366,6 +373,91 @@ class ModularMediaResolver(
                 headers = mapOf("User-Agent" to "Mozilla/5.0")
             )
         )
+    }
+
+    override suspend fun resolveDownloadStream(
+        tmdbId: Int,
+        mediaType: String,
+        seasonNumber: Int?,
+        episodeNumber: Int?
+    ): Result<ResolvedStream> = withContext(Dispatchers.IO) {
+        // 1. Try NetMirror Master Stream first (1080p Multi-Audio direct M3U8)
+        val title = if (mediaType == "tv") {
+            repository.getTvDetails(tmdbId).getOrNull()?.name
+        } else {
+            repository.getMovieDetails(tmdbId).getOrNull()?.title
+        }
+
+        if (!title.isNullOrBlank()) {
+            try {
+                val netMirrorRes = netMirrorClient.searchAndExtractStream(
+                    title = title,
+                    mediaType = mediaType,
+                    seasonNumber = seasonNumber,
+                    episodeNumber = episodeNumber
+                )
+                if (netMirrorRes.isSuccess) {
+                    val (videoUrl, headers) = netMirrorRes.getOrThrow()
+                    if (videoUrl.isNotBlank() && !videoUrl.contains("220884") && !videoUrl.contains("abuse", ignoreCase = true)) {
+                        Log.d("ModularMediaResolver", "Resolved direct NetMirror download stream: $videoUrl")
+                        return@withContext Result.success(ResolvedStream(videoUrl = videoUrl, headers = headers))
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w("ModularMediaResolver", "NetMirror download stream search error: ${e.message}")
+            }
+        }
+
+        // 2. Try Debrid / Torrentio direct streams if configured
+        val apiKey = preferences.debridApiKey
+        if (!apiKey.isNullOrBlank()) {
+            val debridProvider = providers.filterIsInstance<TorrentioDebridStreamProvider>().firstOrNull()
+            if (debridProvider != null) {
+                val debridRes = debridProvider.extractStream(tmdbId, mediaType, seasonNumber, episodeNumber)
+                if (debridRes.isSuccess) {
+                    val stream = debridRes.getOrThrow()
+                    if (!isWebEmbed(stream.videoUrl)) {
+                        Log.d("ModularMediaResolver", "Resolved direct Debrid download stream: ${stream.videoUrl}")
+                        return@withContext Result.success(stream)
+                    }
+                }
+            }
+        }
+
+        // 3. Query indexer releases for direct stream or TorBox cached stream
+        val releasesRes = searchReleases(tmdbId, mediaType, seasonNumber, episodeNumber)
+        if (releasesRes.isSuccess) {
+            val releases = releasesRes.getOrThrow()
+            val direct = releases.firstOrNull { rel ->
+                val u = rel.directStreamUrl.orEmpty()
+                u.isNotBlank() && !isWebEmbed(u)
+            }
+            if (direct != null) {
+                return@withContext Result.success(
+                    ResolvedStream(
+                        videoUrl = direct.directStreamUrl!!,
+                        headers = mapOf("User-Agent" to "AuraPlay/1.0 (Android Native Mobile/TV)")
+                    )
+                )
+            }
+
+            if (torBoxClient.isConfigured()) {
+                val topMagnet = releases.firstOrNull { it.magnetUrl != null }?.magnetUrl
+                if (topMagnet != null) {
+                    val torBoxRes = torBoxClient.resolveAndStream(topMagnet)
+                    if (torBoxRes.isSuccess) {
+                        return@withContext Result.success(
+                            ResolvedStream(
+                                videoUrl = torBoxRes.getOrThrow(),
+                                headers = mapOf("User-Agent" to "AuraPlay/1.0 (Android Native Mobile/TV)")
+                            )
+                        )
+                    }
+                }
+            }
+        }
+
+        Result.failure(Exception("Direct offline download is not available for this stream source. Online streaming is available with zero ads."))
     }
 
     override suspend fun searchReleases(
@@ -581,5 +673,15 @@ class ModularMediaResolver(
     private fun extractIndexer(text: String): String {
         val match = Regex("⚙️\\s*([^\n\r]+)").find(text)
         return match?.groupValues?.get(1)?.trim() ?: ""
+    }
+
+    private fun isWebEmbed(url: String): Boolean {
+        val lower = url.lowercase()
+        return lower.contains("vidlink.pro") ||
+               lower.contains("autoembed.co") ||
+               lower.contains("vidsrc.") ||
+               lower.contains("2embed.") ||
+               lower.contains("superembed.") ||
+               lower.contains("embed")
     }
 }

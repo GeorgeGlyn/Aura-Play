@@ -7,9 +7,11 @@ import androidx.lifecycle.viewModelScope
 import androidx.work.Data
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
+import com.creativemedialabs.auraplay.core.database.dao.DownloadDao
 import com.creativemedialabs.auraplay.core.database.dao.EpisodeDao
 import com.creativemedialabs.auraplay.core.database.dao.MonitoredSeriesDao
 import com.creativemedialabs.auraplay.core.database.dao.WatchlistDao
+import com.creativemedialabs.auraplay.core.database.entity.DownloadEntity
 import com.creativemedialabs.auraplay.core.database.entity.EpisodeEntity
 import com.creativemedialabs.auraplay.core.database.entity.MonitoredSeriesEntity
 import com.creativemedialabs.auraplay.core.database.entity.WatchlistEntity
@@ -56,6 +58,7 @@ class DetailsViewModel @Inject constructor(
     private val watchlistDao: WatchlistDao,
     private val monitoredSeriesDao: MonitoredSeriesDao,
     private val episodeDao: EpisodeDao,
+    private val downloadDao: DownloadDao,
     private val nsdClient: NsdClient,
     private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
@@ -79,6 +82,9 @@ class DetailsViewModel @Inject constructor(
 
     val episodesFromDb: StateFlow<List<EpisodeEntity>> = episodeDao.getEpisodesForSeries(mediaId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val currentDownload: StateFlow<DownloadEntity?> = downloadDao.getDownloadFlow(mediaId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val discoveredTvs: StateFlow<List<TvDevice>> = nsdClient.discoveredDevices
 
@@ -214,8 +220,8 @@ class DetailsViewModel @Inject constructor(
     fun downloadEpisode(context: Context, episode: TmdbEpisodeItem) {
         val detail = _uiState.value.mediaDetail ?: return
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isResolvingStream = true)
-            mediaResolver.resolveStream(
+            _uiState.value = _uiState.value.copy(isResolvingStream = true, errorMessage = null)
+            mediaResolver.resolveDownloadStream(
                 tmdbId = mediaId,
                 mediaType = "tv",
                 seasonNumber = episode.seasonNumber,
@@ -282,13 +288,13 @@ class DetailsViewModel @Inject constructor(
     fun startDownload(context: Context) {
         val detail = _uiState.value.mediaDetail ?: return
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isResolvingStream = true)
+            _uiState.value = _uiState.value.copy(isResolvingStream = true, errorMessage = null)
             val isTv = _uiState.value.isTvShow
             val targetType = if (isTv) "tv" else "movie"
             val seasonNum = if (isTv) (_uiState.value.selectedSeason.takeIf { it > 0 } ?: 1) else null
             val episodeNum = if (isTv) (_uiState.value.seasonEpisodes.firstOrNull()?.episodeNumber ?: 1) else null
 
-            mediaResolver.resolveStream(
+            mediaResolver.resolveDownloadStream(
                 tmdbId = mediaId,
                 mediaType = targetType,
                 seasonNumber = seasonNum,
