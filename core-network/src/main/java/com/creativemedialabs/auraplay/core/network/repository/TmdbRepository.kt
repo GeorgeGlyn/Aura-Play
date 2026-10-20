@@ -41,7 +41,8 @@ class TmdbRepository @Inject constructor(
     suspend fun getPopularTvShows(): Result<TrendingResponse> = withContext(Dispatchers.IO) {
         try {
             val response = api.getPopularTvShows(apiKey = BuildConfig.TMDB_API_KEY)
-            Result.success(response)
+            val mappedResults = response.results.map { it.copy(rawMediaType = "tv") }
+            Result.success(response.copy(results = mappedResults))
         } catch (e: Exception) {
             Result.failure(e)
         }

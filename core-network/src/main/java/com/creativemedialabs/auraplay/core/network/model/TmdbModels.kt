@@ -16,11 +16,28 @@ data class TmdbMediaItem(
     @SerializedName("overview") val overview: String = "",
     @SerializedName("poster_path") val posterPath: String? = null,
     @SerializedName("backdrop_path") val backdropPath: String? = null,
-    @SerializedName("media_type") val mediaType: String = "movie",
+    @SerializedName("media_type") val rawMediaType: String? = null,
     @SerializedName("vote_average") val voteAverage: Double = 0.0,
     @SerializedName("release_date") val releaseDate: String? = null,
     @SerializedName("first_air_date") val firstAirDate: String? = null
-)
+) {
+    val isTvShow: Boolean
+        get() = rawMediaType.equals("tv", ignoreCase = true) ||
+                (!name.isNullOrBlank() && title.isNullOrBlank()) ||
+                (!firstAirDate.isNullOrBlank() && releaseDate.isNullOrBlank())
+
+    val isMovie: Boolean
+        get() = !isTvShow
+
+    val mediaType: String
+        get() = if (isTvShow) "tv" else "movie"
+
+    val displayTitle: String
+        get() = title ?: name ?: "Untitled"
+
+    val displayReleaseYear: String?
+        get() = (releaseDate ?: firstAirDate)?.take(4)
+}
 
 data class MediaDetailResponse(
     @SerializedName("id") val id: Int,
@@ -40,6 +57,18 @@ data class MediaDetailResponse(
 ) {
     val safeGenres: List<Genre> get() = genres ?: emptyList()
     val safeSeasons: List<TmdbSeasonSummary> get() = seasons ?: emptyList()
+
+    val isTvShow: Boolean
+        get() = (!name.isNullOrBlank() && title.isNullOrBlank()) ||
+                safeSeasons.isNotEmpty() ||
+                (numberOfSeasons != null && numberOfSeasons > 0) ||
+                !firstAirDate.isNullOrBlank()
+
+    val mediaType: String
+        get() = if (isTvShow) "tv" else "movie"
+
+    val displayTitle: String
+        get() = title ?: name ?: "Unknown"
 }
 
 data class ExternalIdsResponse(

@@ -48,10 +48,16 @@ private const val TMDB_BACKDROP_BASE = "https://image.tmdb.org/t/p/w1280"
 @Composable
 fun DetailsScreen(
     mediaId: Int,
+    mediaType: String? = null,
     onNavigateToPlayer: (String) -> Unit,
     onBack: (() -> Unit)? = null,
     viewModel: DetailsViewModel = hiltViewModel()
 ) {
+    LaunchedEffect(mediaId, mediaType) {
+        if (mediaType != null) {
+            viewModel.loadDetails(mediaType)
+        }
+    }
     val uiState by viewModel.uiState.collectAsState()
     val isInWatchlist by viewModel.isInWatchlist.collectAsState()
     val isMonitored by viewModel.isMonitored.collectAsState()

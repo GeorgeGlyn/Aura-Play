@@ -79,8 +79,8 @@ class SearchViewModel @Inject constructor(
                 onSuccess = { items ->
                     val filter = _uiState.value.selectedFilter
                     val filtered = when (filter) {
-                        "Movies" -> items.filter { it.mediaType == "movie" || it.title != null }
-                        "TV Shows" -> items.filter { it.mediaType == "tv" || it.name != null }
+                        "Movies" -> items.filter { !it.isTvShow }
+                        "TV Shows" -> items.filter { it.isTvShow }
                         else -> items
                     }
                     _uiState.update { it.copy(results = filtered, isSearching = false) }

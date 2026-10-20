@@ -39,7 +39,7 @@ private const val TMDB_BACKDROP_BASE = "https://image.tmdb.org/t/p/w1280"
 
 @Composable
 fun HomeScreen(
-    onNavigateToDetails: (Int) -> Unit,
+    onNavigateToDetails: (Int, String) -> Unit,
     onNavigateToSearch: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
@@ -85,121 +85,153 @@ fun HomeScreen(
                 }
             }
         } else {
+            // Filter spotlight and rows based on selected category tab
+            val selectedCategory = uiState.selectedCategory
+            val spotlight = when (selectedCategory) {
+                "TV Shows" -> uiState.popularTvShows.firstOrNull() ?: uiState.spotlightItem
+                "Movies" -> uiState.popularMovies.firstOrNull() ?: uiState.spotlightItem
+                else -> uiState.spotlightItem
+            }
+
             // Scrollable Catalog Content
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(bottom = 80.dp)
-        ) {
-            // 1. Full-Bleed Netflix-Style Hero Spotlight Billboard
-            uiState.spotlightItem?.let { spotlight ->
-                HeroBillboard(
-                    item = spotlight,
-                    onPlay = { onNavigateToDetails(spotlight.id) },
-                    onDetails = { onNavigateToDetails(spotlight.id) }
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 2. Continue Watching (if watch history exists)
-            if (continueWatching.isNotEmpty()) {
-                SectionHeader(title = "Continue Watching for You")
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    items(continueWatching) { item ->
-                        ContinueWatchingCard(item = item, onClick = { onNavigateToDetails(item.mediaId) })
-                    }
-                }
-                Spacer(modifier = Modifier.height(28.dp))
-            }
-
-            // My List Row (Saved Movies & Shows)
-            if (watchlist.isNotEmpty()) {
-                SectionHeader(title = "My List")
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(watchlist) { item ->
-                        StandardMediaPosterCard(
-                            item = TmdbMediaItem(
-                                id = item.mediaId,
-                                title = item.title,
-                                posterPath = item.posterPath,
-                                mediaType = item.mediaType
-                            ),
-                            onClick = { onNavigateToDetails(item.mediaId) }
+                    .verticalScroll(rememberScrollState())
+                    .padding(bottom = 80.dp)
+            ) {
+                // 1. Full-Bleed Netflix-Style Hero Spotlight Billboard (for All, Movies, TV Shows)
+                if (selectedCategory != "My List") {
+                    spotlight?.let { heroItem ->
+                        HeroBillboard(
+                            item = heroItem,
+                            onPlay = { onNavigateToDetails(heroItem.id, heroItem.mediaType) },
+                            onDetails = { onNavigateToDetails(heroItem.id, heroItem.mediaType) }
                         )
                     }
+                    Spacer(modifier = Modifier.height(16.dp))
+                } else {
+                    Spacer(modifier = Modifier.height(80.dp))
                 }
-                Spacer(modifier = Modifier.height(28.dp))
-            }
 
-            // 3. Top 10 Today Row with Stylized Numbers (Netflix Signature Feature)
-            if (uiState.top10Movies.isNotEmpty()) {
-                SectionHeader(title = "Top 10 Movies Today", badge = "TOP 10")
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    itemsIndexed(uiState.top10Movies) { index, item ->
-                        Top10NumberedCard(
-                            rank = index + 1,
-                            item = item,
-                            onClick = { onNavigateToDetails(item.id) }
-                        )
+                // 2. Continue Watching (if watch history exists)
+                if (continueWatching.isNotEmpty()) {
+                    SectionHeader(title = "Continue Watching for You")
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        items(continueWatching) { item ->
+                            ContinueWatchingCard(item = item, onClick = { onNavigateToDetails(item.mediaId, item.mediaType) })
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(28.dp))
+                }
+
+                // 3. My List Row (Saved Movies & Shows)
+                if (watchlist.isNotEmpty()) {
+                    SectionHeader(title = "My List")
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        items(watchlist) { item ->
+                            StandardMediaPosterCard(
+                                item = TmdbMediaItem(
+                                    id = item.mediaId,
+                                    title = item.title,
+                                    posterPath = item.posterPath,
+                                    rawMediaType = item.mediaType
+                                ),
+                                onClick = { onNavigateToDetails(item.mediaId, item.mediaType) }
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(28.dp))
+                }
+
+                // Category-Specific Sections:
+                if (selectedCategory == "All" || selectedCategory == "Movies") {
+                    // Top 10 Movies Today
+                    if (uiState.top10Movies.isNotEmpty()) {
+                        SectionHeader(title = "Top 10 Movies Today", badge = "TOP 10")
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            itemsIndexed(uiState.top10Movies) { index, item ->
+                                Top10NumberedCard(
+                                    rank = index + 1,
+                                    item = item,
+                                    onClick = { onNavigateToDetails(item.id, item.mediaType) }
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(28.dp))
+                    }
+
+                    // Trending Movies
+                    val trendingMovies = uiState.trendingItems.filter { !it.isTvShow }
+                    if (trendingMovies.isNotEmpty()) {
+                        SectionHeader(title = "Trending Movies")
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            items(trendingMovies) { item ->
+                                StandardMediaPosterCard(item = item, onClick = { onNavigateToDetails(item.id, item.mediaType) })
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(28.dp))
+                    }
+
+                    // Blockbuster Movies
+                    if (uiState.popularMovies.isNotEmpty()) {
+                        SectionHeader(title = "Blockbuster Movies")
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            items(uiState.popularMovies) { item ->
+                                StandardMediaPosterCard(item = item, onClick = { onNavigateToDetails(item.id, item.mediaType) })
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(28.dp))
                     }
                 }
-                Spacer(modifier = Modifier.height(28.dp))
-            }
 
-            // 4. Trending Now
-            if (uiState.trendingItems.isNotEmpty()) {
-                SectionHeader(title = "Trending Now")
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(uiState.trendingItems) { item ->
-                        StandardMediaPosterCard(item = item, onClick = { onNavigateToDetails(item.id) })
+                if (selectedCategory == "All" || selectedCategory == "TV Shows") {
+                    // Popular TV Shows
+                    if (uiState.popularTvShows.isNotEmpty()) {
+                        SectionHeader(title = if (selectedCategory == "TV Shows") "Popular TV Series" else "Bingeworthy TV Shows")
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            items(uiState.popularTvShows) { item ->
+                                StandardMediaPosterCard(item = item, onClick = { onNavigateToDetails(item.id, item.mediaType) })
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(28.dp))
+                    }
+
+                    // Trending TV Shows
+                    val trendingTv = uiState.trendingItems.filter { it.isTvShow }
+                    if (trendingTv.isNotEmpty()) {
+                        SectionHeader(title = "Trending TV Series")
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            items(trendingTv) { item ->
+                                StandardMediaPosterCard(item = item, onClick = { onNavigateToDetails(item.id, item.mediaType) })
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(28.dp))
                     }
                 }
-                Spacer(modifier = Modifier.height(28.dp))
-            }
-
-            // 5. Popular Blockbusters
-            if (uiState.popularMovies.isNotEmpty()) {
-                SectionHeader(title = "Blockbuster Movies")
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(uiState.popularMovies) { item ->
-                        StandardMediaPosterCard(item = item, onClick = { onNavigateToDetails(item.id) })
-                    }
-                }
-                Spacer(modifier = Modifier.height(28.dp))
-            }
-
-            // 6. Bingeworthy TV Shows
-            if (uiState.popularTvShows.isNotEmpty()) {
-                SectionHeader(title = "Popular TV Shows")
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(uiState.popularTvShows) { item ->
-                        StandardMediaPosterCard(item = item, onClick = { onNavigateToDetails(item.id) })
-                    }
-                }
-                Spacer(modifier = Modifier.height(28.dp))
             }
         }
-    }
 
         // Top Translucent Glassmorphic App Bar & Filter Pills
         TopGlassmorphicNavBar(
@@ -550,6 +582,21 @@ private fun StandardMediaPosterCard(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
             )
+
+            // Type badge on top left
+            Surface(
+                shape = RoundedCornerShape(bottomEnd = 6.dp),
+                color = if (item.isTvShow) Color(0xDD0077EE) else Color(0xDDE50914),
+                modifier = Modifier.align(Alignment.TopStart)
+            ) {
+                Text(
+                    text = if (item.isTvShow) "SERIES" else "MOVIE",
+                    color = Color.White,
+                    fontSize = 7.5.sp,
+                    fontWeight = FontWeight.Black,
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                )
+            }
 
             // Rating badge on top right
             if (item.voteAverage > 0) {

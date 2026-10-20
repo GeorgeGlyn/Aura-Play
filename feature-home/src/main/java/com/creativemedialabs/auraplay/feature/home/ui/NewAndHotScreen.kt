@@ -30,7 +30,7 @@ private const val TMDB_BACKDROP_BASE = "https://image.tmdb.org/t/p/w780"
 
 @Composable
 fun NewAndHotScreen(
-    onNavigateToDetails: (Int) -> Unit,
+    onNavigateToDetails: (Int, String) -> Unit,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -80,7 +80,7 @@ fun NewAndHotScreen(
                         HotMediaItemCard(
                             rank = index + 1,
                             item = item,
-                            onClick = { onNavigateToDetails(item.id) }
+                            onClick = { onNavigateToDetails(item.id, item.mediaType) }
                         )
                     }
                 }
@@ -95,8 +95,8 @@ private fun HotMediaItemCard(
     item: TmdbMediaItem,
     onClick: () -> Unit
 ) {
-    val title = item.title ?: item.name ?: "Trending"
-    val isMovie = item.mediaType == "movie" || item.title != null
+    val title = item.displayTitle
+    val isMovie = item.isMovie
 
     Card(
         shape = RoundedCornerShape(12.dp),

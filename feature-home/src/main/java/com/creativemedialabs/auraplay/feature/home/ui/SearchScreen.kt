@@ -40,7 +40,7 @@ private const val TMDB_POSTER_BASE = "https://image.tmdb.org/t/p/w500"
 
 @Composable
 fun SearchScreen(
-    onNavigateToDetails: (Int) -> Unit,
+    onNavigateToDetails: (Int, String) -> Unit,
     viewModel: SearchViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -206,7 +206,7 @@ fun SearchScreen(
                     modifier = Modifier.fillMaxSize()
                 ) {
                     items(displayItems, key = { it.id }) { item ->
-                        SearchResultCard(item = item, onClick = { onNavigateToDetails(item.id) })
+                        SearchResultCard(item = item, onClick = { onNavigateToDetails(item.id, item.mediaType) })
                     }
                 }
             }
@@ -219,8 +219,8 @@ private fun SearchResultCard(
     item: TmdbMediaItem,
     onClick: () -> Unit
 ) {
-    val title = item.title ?: item.name ?: "Untitled"
-    val isMovie = item.mediaType == "movie" || item.title != null
+    val title = item.displayTitle
+    val isMovie = item.isMovie
 
     Column(
         modifier = Modifier

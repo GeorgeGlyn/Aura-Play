@@ -168,8 +168,8 @@ private fun AuraPlayApp() {
             NavHost(navController = navController, startDestination = "home") {
                 composable("home") {
                     HomeScreen(
-                        onNavigateToDetails = { mediaId ->
-                            navController.navigate("details/$mediaId")
+                        onNavigateToDetails = { mediaId, type ->
+                            navController.navigate("details/$mediaId?type=$type")
                         },
                         onNavigateToSearch = {
                             navController.navigate("search")
@@ -178,15 +178,15 @@ private fun AuraPlayApp() {
                 }
                 composable("search") {
                     SearchScreen(
-                        onNavigateToDetails = { mediaId ->
-                            navController.navigate("details/$mediaId")
+                        onNavigateToDetails = { mediaId, type ->
+                            navController.navigate("details/$mediaId?type=$type")
                         }
                     )
                 }
                 composable("hot") {
                     NewAndHotScreen(
-                        onNavigateToDetails = { mediaId ->
-                            navController.navigate("details/$mediaId")
+                        onNavigateToDetails = { mediaId, type ->
+                            navController.navigate("details/$mediaId?type=$type")
                         }
                     )
                 }
@@ -198,10 +198,12 @@ private fun AuraPlayApp() {
                         }
                     )
                 }
-                composable("details/{mediaId}") { backStackEntry ->
+                composable("details/{mediaId}?type={type}") { backStackEntry ->
                     val mediaId = backStackEntry.arguments?.getString("mediaId")?.toIntOrNull() ?: 0
+                    val type = backStackEntry.arguments?.getString("type")
                     DetailsScreen(
                         mediaId = mediaId,
+                        mediaType = type,
                         onNavigateToPlayer = { url ->
                             val encodedUrl = URLEncoder.encode(url, StandardCharsets.UTF_8.toString())
                             navController.navigate("player?url=$encodedUrl")

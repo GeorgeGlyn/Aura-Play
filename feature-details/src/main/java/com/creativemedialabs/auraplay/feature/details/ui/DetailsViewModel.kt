@@ -57,7 +57,7 @@ class DetailsViewModel @Inject constructor(
     private val monitoredSeriesDao: MonitoredSeriesDao,
     private val episodeDao: EpisodeDao,
     private val nsdClient: NsdClient,
-    savedStateHandle: SavedStateHandle
+    private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
     val mediaId: Int = savedStateHandle.get<String>("mediaId")?.toIntOrNull()
@@ -86,21 +86,51 @@ class DetailsViewModel @Inject constructor(
         loadDetails()
     }
 
-    fun loadDetails() {
+    fun loadDetails(explicitMediaType: String? = null) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
 
-            // Try movie first; if not found or empty title, try TV show details
-            var detailRes = repository.getMovieDetails(mediaId)
-            var isTv = false
-            if (detailRes.isFailure || detailRes.getOrNull()?.title == null) {
+            val passedType = explicitMediaType ?: savedStateHandle.get<String>("type")
+            val isExplicitTv = passedType.equals("tv", ignoreCase = true)
+            val isExplicitMovie = passedType.equals("movie", ignoreCase = true)
+
+            var detailRes: Result<MediaDetailResponse>
+            var isTv: Boolean
+
+            if (isExplicitTv) {
                 val tvRes = repository.getTvDetails(mediaId)
                 if (tvRes.isSuccess) {
                     detailRes = tvRes
                     isTv = true
+                } else {
+                    detailRes = repository.getMovieDetails(mediaId)
+                    isTv = false
                 }
-            } else if (detailRes.getOrNull()?.numberOfSeasons != null && (detailRes.getOrNull()?.numberOfSeasons ?: 0) > 0) {
-                isTv = true
+            } else if (isExplicitMovie) {
+                val movieRes = repository.getMovieDetails(mediaId)
+                if (movieRes.isSuccess) {
+                    detailRes = movieRes
+                    isTv = false
+                } else {
+                    detailRes = repository.getTvDetails(mediaId)
+                    isTv = true
+                }
+            } else {
+                // If not specified, test TV first if it has seasons, otherwise check both
+                val tvAttempt = repository.getTvDetails(mediaId)
+                if (tvAttempt.isSuccess && (!tvAttempt.getOrNull()?.name.isNullOrBlank() || tvAttempt.getOrNull()?.safeSeasons?.isNotEmpty() == true)) {
+                    detailRes = tvAttempt
+                    isTv = true
+                } else {
+                    val movieAttempt = repository.getMovieDetails(mediaId)
+                    if (movieAttempt.isSuccess && !movieAttempt.getOrNull()?.title.isNullOrBlank()) {
+                        detailRes = movieAttempt
+                        isTv = false
+                    } else {
+                        detailRes = tvAttempt
+                        isTv = true
+                    }
+                }
             }
 
             val recsRes = repository.getRecommendations(mediaId)
@@ -108,7 +138,7 @@ class DetailsViewModel @Inject constructor(
             detailRes.fold(
                 onSuccess = { detail ->
                     val seasonsList = detail.safeSeasons
-                    val isTvShow = isTv || seasonsList.isNotEmpty()
+                    val isTvShow = isTv || detail.isTvShow || seasonsList.isNotEmpty()
                     _uiState.value = DetailsUiState(
                         mediaDetail = detail,
                         recommendations = recsRes.getOrNull()?.results ?: emptyList(),
@@ -253,15 +283,32 @@ class DetailsViewModel @Inject constructor(
         val detail = _uiState.value.mediaDetail ?: return
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isResolvingStream = true)
-            mediaResolver.resolveStream(mediaId, "movie").fold(
+            val isTv = _uiState.value.isTvShow
+            val targetType = if (isTv) "tv" else "movie"
+            val seasonNum = if (isTv) (_uiState.value.selectedSeason.takeIf { it > 0 } ?: 1) else null
+            val episodeNum = if (isTv) (_uiState.value.seasonEpisodes.firstOrNull()?.episodeNumber ?: 1) else null
+
+            mediaResolver.resolveStream(
+                tmdbId = mediaId,
+                mediaType = targetType,
+                seasonNumber = seasonNum,
+                episodeNumber = episodeNum
+            ).fold(
                 onSuccess = { stream ->
                     _uiState.value = _uiState.value.copy(isResolvingStream = false)
                     val inputData = Data.Builder()
                         .putInt(MediaDownloadWorker.KEY_MEDIA_ID, mediaId)
                         .putString(MediaDownloadWorker.KEY_VIDEO_URL, stream.videoUrl)
-                        .putString(MediaDownloadWorker.KEY_TITLE, detail.title ?: detail.name ?: "Unknown")
+                        .putString(MediaDownloadWorker.KEY_TITLE, detail.displayTitle)
                         .putString(MediaDownloadWorker.KEY_POSTER_PATH, detail.posterPath)
-                        .putString(MediaDownloadWorker.KEY_MEDIA_TYPE, "movie")
+                        .putString(MediaDownloadWorker.KEY_MEDIA_TYPE, targetType)
+                        .apply {
+                            if (isTv && seasonNum != null && episodeNum != null) {
+                                putInt(MediaDownloadWorker.KEY_SERIES_ID, mediaId)
+                                putInt(MediaDownloadWorker.KEY_SEASON_NUMBER, seasonNum)
+                                putInt(MediaDownloadWorker.KEY_EPISODE_NUMBER, episodeNum)
+                            }
+                        }
                         .build()
 
                     val downloadWork = OneTimeWorkRequestBuilder<MediaDownloadWorker>()
@@ -293,11 +340,21 @@ class DetailsViewModel @Inject constructor(
         val detail = _uiState.value.mediaDetail ?: return
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isCasting = true, castSuccessMessage = null, errorMessage = null)
-            mediaResolver.resolveStream(mediaId, "movie").fold(
+            val isTv = _uiState.value.isTvShow
+            val targetType = if (isTv) "tv" else "movie"
+            val seasonNum = if (isTv) (_uiState.value.selectedSeason.takeIf { it > 0 } ?: 1) else null
+            val episodeNum = if (isTv) (_uiState.value.seasonEpisodes.firstOrNull()?.episodeNumber ?: 1) else null
+
+            mediaResolver.resolveStream(
+                tmdbId = mediaId,
+                mediaType = targetType,
+                seasonNumber = seasonNum,
+                episodeNumber = episodeNum
+            ).fold(
                 onSuccess = { stream ->
                     val request = PlaybackRequest(
                         videoUrl = stream.videoUrl,
-                        title = detail.title ?: detail.name ?: "Aura Play Stream",
+                        title = detail.displayTitle,
                         tmdbId = mediaId
                     )
                     val result = nsdClient.pushStreamToTv(device, request)
@@ -329,7 +386,17 @@ class DetailsViewModel @Inject constructor(
     fun resolveAndPlay(onStreamReady: (String) -> Unit) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isResolvingStream = true)
-            mediaResolver.resolveStream(mediaId, "movie").fold(
+            val isTv = _uiState.value.isTvShow
+            val targetType = if (isTv) "tv" else "movie"
+            val seasonNum = if (isTv) (_uiState.value.selectedSeason.takeIf { it > 0 } ?: 1) else null
+            val episodeNum = if (isTv) (_uiState.value.seasonEpisodes.firstOrNull()?.episodeNumber ?: 1) else null
+
+            mediaResolver.resolveStream(
+                tmdbId = mediaId,
+                mediaType = targetType,
+                seasonNumber = seasonNum,
+                episodeNumber = episodeNum
+            ).fold(
                 onSuccess = { stream ->
                     _uiState.value = _uiState.value.copy(
                         resolvedStream = stream,
