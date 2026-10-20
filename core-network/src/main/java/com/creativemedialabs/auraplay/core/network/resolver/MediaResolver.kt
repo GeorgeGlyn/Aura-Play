@@ -151,17 +151,17 @@ class FreeEmbedStreamProvider(
             // Target verified high-speed web embed endpoints with autoplay
             val candidateUrls = if (mediaType == "tv" && seasonNumber != null && episodeNumber != null) {
                 listOf(
-                    "https://vidlink.pro/tv/$tmdbId/$seasonNumber/$episodeNumber?autoplay=true",
+                    "https://vidlink.pro/tv/$tmdbId/$seasonNumber/$episodeNumber?autoplay=true&primaryColor=E50914",
                     "https://vidsrc.cc/v2/embed/tv/$tmdbId/$seasonNumber/$episodeNumber",
-                    "https://autoembed.co/tv/tmdb/$tmdbId-$seasonNumber-$episodeNumber",
-                    "https://vidsrc.xyz/embed/tv?tmdb=$tmdbId&season=$seasonNumber&episode=$episodeNumber"
+                    "https://vidsrc.xyz/embed/tv?tmdb=$tmdbId&season=$seasonNumber&episode=$episodeNumber",
+                    "https://autoembed.co/tv/tmdb/$tmdbId-$seasonNumber-$episodeNumber"
                 )
             } else {
                 listOf(
-                    "https://vidlink.pro/movie/$tmdbId?autoplay=true",
+                    "https://vidlink.pro/movie/$tmdbId?autoplay=true&primaryColor=E50914",
                     "https://vidsrc.cc/v2/embed/movie/$tmdbId",
-                    "https://autoembed.co/movie/tmdb/$tmdbId",
-                    "https://vidsrc.xyz/embed/movie?tmdb=$tmdbId"
+                    "https://vidsrc.xyz/embed/movie?tmdb=$tmdbId",
+                    "https://autoembed.co/movie/tmdb/$tmdbId"
                 )
             }
 
@@ -188,11 +188,11 @@ class FreeEmbedStreamProvider(
                 }
             }
 
-            // Reliable default fallback to VidLink autoplay
+            // Reliable default fallback to VidLink autoplay with Aura branding
             val fallbackUrl = if (mediaType == "tv" && seasonNumber != null && episodeNumber != null) {
-                "https://vidlink.pro/tv/$tmdbId/$seasonNumber/$episodeNumber?autoplay=true"
+                "https://vidlink.pro/tv/$tmdbId/$seasonNumber/$episodeNumber?autoplay=true&primaryColor=E50914"
             } else {
-                "https://vidlink.pro/movie/$tmdbId?autoplay=true"
+                "https://vidlink.pro/movie/$tmdbId?autoplay=true&primaryColor=E50914"
             }
             Result.success(ResolvedStream(videoUrl = fallbackUrl))
         } catch (e: Exception) {
@@ -356,9 +356,9 @@ class ModularMediaResolver(
 
         // 3. Fallback directly to verified high-speed web stream
         val fallbackUrl = if (mediaType == "tv" && seasonNumber != null && episodeNumber != null) {
-            "https://autoembed.co/tv/tmdb/$tmdbId-$seasonNumber-$episodeNumber"
+            "https://vidlink.pro/tv/$tmdbId/$seasonNumber/$episodeNumber?autoplay=true&primaryColor=E50914"
         } else {
-            "https://autoembed.co/movie/tmdb/$tmdbId"
+            "https://vidlink.pro/movie/$tmdbId?autoplay=true&primaryColor=E50914"
         }
         return Result.success(
             ResolvedStream(

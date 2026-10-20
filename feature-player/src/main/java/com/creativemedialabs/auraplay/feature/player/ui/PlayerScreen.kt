@@ -7,9 +7,11 @@ import android.graphics.Typeface
 import android.media.AudioManager
 import android.util.Log
 import android.view.ViewGroup
+import android.net.Uri
 import android.widget.FrameLayout
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -162,9 +164,26 @@ fun WebStreamPlayer(
                         }
 
                         webViewClient = object : WebViewClient() {
+                            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                                super.onPageStarted(view, url, favicon)
+                                view?.evaluateJavascript(AuraAdBlocker.getAdBlockScript(), null)
+                            }
+
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 super.onPageFinished(view, url)
                                 isLoading = false
+                                view?.evaluateJavascript(AuraAdBlocker.getAdBlockScript(), null)
+                            }
+
+                            override fun shouldInterceptRequest(
+                                view: WebView?,
+                                request: WebResourceRequest?
+                            ): WebResourceResponse? {
+                                val reqUrl = request?.url?.toString() ?: return null
+                                if (AuraAdBlocker.isAdUrl(reqUrl)) {
+                                    return AuraAdBlocker.createEmptyResourceResponse()
+                                }
+                                return super.shouldInterceptRequest(view, request)
                             }
 
                             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
@@ -173,23 +192,48 @@ fun WebStreamPlayer(
                                 if (scheme != "http" && scheme != "https") {
                                     return true // block external apps / market
                                 }
-                                val host = uri.host?.lowercase() ?: ""
-                                // Only block known intrusive ad popups on main frame
-                                if (request.isForMainFrame) {
-                                    val isAd = host.contains("adsterra") ||
-                                               host.contains("popcash") ||
-                                               host.contains("bet365") ||
-                                               host.contains("histats") ||
-                                               host.contains("onclick") ||
-                                               host.contains("traffic")
-                                    if (isAd) return true
+                                val urlStr = uri.toString()
+                                if (AuraAdBlocker.isAdUrl(urlStr)) {
+                                    return true // block navigation to any ad or tracker URL
                                 }
-                                return false // allow player iframes, CDNs, and media streams
+
+                                val currentHost = Uri.parse(videoUrl).host?.lowercase() ?: ""
+                                val targetHost = uri.host?.lowercase() ?: ""
+
+                                if (request.isForMainFrame) {
+                                    val isAllowedHost = targetHost.contains(currentHost) ||
+                                                        currentHost.contains(targetHost) ||
+                                                        targetHost.contains("vidlink") ||
+                                                        targetHost.contains("vidsrc") ||
+                                                        targetHost.contains("autoembed") ||
+                                                        targetHost.contains("stream") ||
+                                                        targetHost.contains("cdn") ||
+                                                        urlStr.contains(".m3u8") ||
+                                                        urlStr.contains(".mp4")
+                                    if (!isAllowedHost) {
+                                        Log.d("WebStreamPlayer", "Blocked main frame navigation to foreign/ad host: $targetHost")
+                                        return true
+                                    }
+                                }
+                                return false
                             }
                         }
 
                         webChromeClient = object : WebChromeClient() {
+                            override fun onCreateWindow(
+                                view: WebView?,
+                                isDialog: Boolean,
+                                isUserGesture: Boolean,
+                                resultMsg: android.os.Message?
+                            ): Boolean {
+                                // Block all popups, ad windows, and new tabs
+                                return false
+                            }
+
                             override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                                if (newProgress > 25) {
+                                    view?.evaluateJavascript(AuraAdBlocker.getAdBlockScript(), null)
+                                }
                                 if (newProgress > 60) {
                                     isLoading = false
                                 }
