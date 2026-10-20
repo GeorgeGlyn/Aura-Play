@@ -95,6 +95,7 @@ class NetMirrorClient(
                         if (!searchResp.isSuccessful) continue
 
                         val searchBody = searchResp.body?.string().orEmpty()
+                        if (!searchBody.trim().startsWith("{")) continue
                         val searchData = gson.fromJson(searchBody, NetMirrorSearchResponse::class.java)
                         val results = searchData.searchResult.orEmpty()
                         if (results.isEmpty()) continue
@@ -116,44 +117,47 @@ class NetMirrorClient(
                             .addHeader("Ott", ott)
                             .build()
 
-                    val postResp = client.newCall(postReq).execute()
-                    if (!postResp.isSuccessful) continue
+                        val postResp = client.newCall(postReq).execute()
+                        if (!postResp.isSuccessful) continue
 
-                    val postBody = postResp.body?.string().orEmpty()
-                    val postData = gson.fromJson(postBody, NetMirrorPostResponse::class.java)
+                        val postBody = postResp.body?.string().orEmpty()
+                        if (!postBody.trim().startsWith("{")) continue
+                        val postData = gson.fromJson(postBody, NetMirrorPostResponse::class.java)
 
-                    val targetPlayerId: String? = if (mediaType == "tv" && seasonNumber != null && episodeNumber != null) {
-                        findEpisodeId(base, ott, postData, seasonNumber, episodeNumber)
-                    } else {
-                        postData.mainId ?: bestMatch.id
-                    }
+                        val targetPlayerId: String? = if (mediaType == "tv" && seasonNumber != null && episodeNumber != null) {
+                            findEpisodeId(base, ott, postData, seasonNumber, episodeNumber)
+                        } else {
+                            postData.mainId ?: bestMatch.id
+                        }
 
-                    if (targetPlayerId.isNullOrBlank()) continue
+                        if (targetPlayerId.isNullOrBlank()) continue
 
-                    // Get player link
-                    val playerUrl = "$base/newtv/player.php?id=$targetPlayerId"
-                    val playerReq = Request.Builder()
-                        .url(playerUrl)
-                        .apply { defaultHeaders.forEach { (k, v) -> addHeader(k, v) } }
-                        .addHeader("Ott", ott)
-                        .build()
+                        // Get player link
+                        val playerUrl = "$base/newtv/player.php?id=$targetPlayerId"
+                        val playerReq = Request.Builder()
+                            .url(playerUrl)
+                            .apply { defaultHeaders.forEach { (k, v) -> addHeader(k, v) } }
+                            .addHeader("Ott", ott)
+                            .build()
 
-                    val playerResp = client.newCall(playerReq).execute()
-                    if (!playerResp.isSuccessful) continue
+                        val playerResp = client.newCall(playerReq).execute()
+                        if (!playerResp.isSuccessful) continue
 
-                    val playerBody = playerResp.body?.string().orEmpty()
-                    val playerData = gson.fromJson(playerBody, NetMirrorPlayerResponse::class.java)
+                        val playerBody = playerResp.body?.string().orEmpty()
+                        if (!playerBody.trim().startsWith("{")) continue
+                        val playerData = gson.fromJson(playerBody, NetMirrorPlayerResponse::class.java)
 
-                    val videoLink = playerData.videoLink
-                    if (!videoLink.isNullOrBlank() && videoLink.startsWith("http")) {
-                        val referer = playerData.referer ?: "https://net52.cc"
-                        val headers = mapOf(
-                            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:136.0) Gecko/20100101 Firefox/136.0 /OS.GatuNewTV v1.0",
-                            "Referer" to referer
-                        )
-                        Log.d("NetMirrorClient", "Successfully resolved NetMirror stream: $videoLink ($ott)")
-                        return@withContext Result.success(Pair(videoLink, headers))
-                    }
+                        val videoLink = playerData.videoLink
+                        if (!videoLink.isNullOrBlank() && videoLink.startsWith("http")) {
+                            val referer = playerData.referer ?: "https://net52.cc"
+                            val headers = mapOf(
+                                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:136.0) Gecko/20100101 Firefox/136.0 /OS.GatuNewTV v1.0",
+                                "Referer" to referer
+                            )
+                            val resolvedUrl = resolveBestStreamUrl(videoLink, referer)
+                            Log.d("NetMirrorClient", "Successfully resolved NetMirror stream: $resolvedUrl ($ott)")
+                            return@withContext Result.success(Pair(resolvedUrl, headers))
+                        }
                     } catch (e: Exception) {
                         Log.w("NetMirrorClient", "Error searching $query on $ott: ${e.message}")
                     }
@@ -164,6 +168,49 @@ class NetMirrorClient(
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    private fun resolveBestStreamUrl(masterUrl: String, referer: String): String {
+        try {
+            val req = Request.Builder()
+                .url(masterUrl)
+                .apply { defaultHeaders.forEach { (k, v) -> addHeader(k, v) } }
+                .addHeader("Referer", referer)
+                .build()
+            val resp = client.newCall(req).execute()
+            if (!resp.isSuccessful) return masterUrl
+            val body = resp.body?.string().orEmpty()
+            if (!body.contains("#EXTM3U")) return masterUrl
+
+            // Extract valid CDN host from playlist (e.g. s21.freecdn4.top)
+            val cdnHostMatch = Regex("https://([a-zA-Z0-9.\\-_]+\\.[a-zA-Z0-9]+)/files/").find(body)
+            val cdnHost = cdnHostMatch?.groupValues?.get(1)
+
+            val lines = body.lines().map { it.trim() }
+            val streamUrls = lines.filter { it.startsWith("http") || it.contains("/files/") }
+
+            // Prefer 1080p, then 720p, then any variant
+            val candidate = streamUrls.firstOrNull { it.contains("1080p") }
+                ?: streamUrls.firstOrNull { it.contains("720p") }
+                ?: streamUrls.firstOrNull()
+
+            if (candidate != null) {
+                val fixed = if (candidate.startsWith("https:///") && !cdnHost.isNullOrBlank()) {
+                    candidate.replace("https:///", "https://$cdnHost/")
+                } else if (candidate.startsWith("/") && !cdnHost.isNullOrBlank()) {
+                    "https://$cdnHost$candidate"
+                } else {
+                    candidate
+                }
+                if (fixed.startsWith("http") && !fixed.contains("https:///")) {
+                    Log.d("NetMirrorClient", "Resolved sanitized stream variant: $fixed")
+                    return fixed
+                }
+            }
+        } catch (e: Exception) {
+            Log.w("NetMirrorClient", "Error resolving master stream: ${e.message}")
+        }
+        return masterUrl
     }
 
     private fun findEpisodeId(

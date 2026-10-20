@@ -70,10 +70,18 @@ fun PlayerScreen(
     videoUrl: String,
     onBack: () -> Unit
 ) {
-    if (isWebStream(videoUrl)) {
+    var forceWebStream by remember(videoUrl) { mutableStateOf(false) }
+
+    if (isWebStream(videoUrl) || forceWebStream) {
         WebStreamPlayer(videoUrl = videoUrl, onBack = onBack)
     } else {
-        ExoPlayerStreamPlayer(videoUrl = videoUrl, onBack = onBack)
+        ExoPlayerStreamPlayer(
+            videoUrl = videoUrl,
+            onBack = onBack,
+            onError = {
+                forceWebStream = true
+            }
+        )
     }
 }
 
@@ -309,7 +317,8 @@ fun WebStreamPlayer(
 @Composable
 fun ExoPlayerStreamPlayer(
     videoUrl: String,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onError: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
@@ -371,7 +380,8 @@ fun ExoPlayerStreamPlayer(
             }
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 Log.e("PlayerScreen", "ExoPlayer playback error: ${error.message}", error)
-                gestureIndicatorText = "Stream error: ${error.errorCodeName}"
+                gestureIndicatorText = "Stream source error. Switching to backup server..."
+                onError()
             }
         }
         exoPlayer.addListener(listener)
