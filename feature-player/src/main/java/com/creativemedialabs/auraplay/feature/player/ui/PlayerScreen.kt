@@ -43,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.Tracks
@@ -808,29 +809,46 @@ private fun TrackSelectionDialog(
     exoPlayer: ExoPlayer,
     onDismiss: () -> Unit
 ) {
-    val languages = listOf("English", "Tamil", "Hindi", "Telugu", "Malayalam", "Auto")
+    val audioTracks = remember(exoPlayer) {
+        val tracks = mutableListOf<Pair<String, String?>>()
+        tracks.add("Auto / Default" to null)
+        for (group in exoPlayer.currentTracks.groups) {
+            if (group.type == C.TRACK_TYPE_AUDIO) {
+                for (i in 0 until group.length) {
+                    val format = group.getTrackFormat(i)
+                    val lang = format.language
+                    val label = format.label
+                    val name = when {
+                        !label.isNullOrBlank() -> label
+                        !lang.isNullOrBlank() -> {
+                            val locale = java.util.Locale(lang)
+                            val display = locale.getDisplayLanguage(java.util.Locale.ENGLISH)
+                            if (display.isNotBlank()) display else lang.uppercase()
+                        }
+                        else -> "Audio Track ${tracks.size}"
+                    }
+                    if (tracks.none { it.first == name }) {
+                        tracks.add(name to lang)
+                    }
+                }
+            }
+        }
+        tracks
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Audio & Subtitle Tracks", color = Color.White, fontWeight = FontWeight.Bold) },
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
-                Text("Select Preferred Audio Track", color = Color.Gray, fontSize = 13.sp)
+                Text("Select Available Audio Track", color = Color.Gray, fontSize = 13.sp)
                 Spacer(modifier = Modifier.height(8.dp))
                 LazyColumn {
-                    items(languages) { lang ->
+                    items(audioTracks) { (displayName, langCode) ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    val langCode = when (lang) {
-                                        "English" -> "eng"
-                                        "Tamil" -> "tam"
-                                        "Hindi" -> "hin"
-                                        "Telugu" -> "tel"
-                                        "Malayalam" -> "mal"
-                                        else -> null
-                                    }
                                     val params = exoPlayer.trackSelectionParameters.buildUpon()
                                     if (langCode != null) {
                                         params.setPreferredAudioLanguage(langCode)
@@ -845,7 +863,7 @@ private fun TrackSelectionDialog(
                         ) {
                             Icon(Icons.Default.Audiotrack, contentDescription = null, tint = Color(0xFFE50914))
                             Spacer(modifier = Modifier.width(12.dp))
-                            Text(lang, color = Color.White, fontSize = 15.sp)
+                            Text(displayName, color = Color.White, fontSize = 15.sp)
                         }
                     }
                 }

@@ -326,7 +326,7 @@ fun DetailsScreen(
                     }
 
                     Text(
-                        text = "Audio: English [Original], Tamil, Hindi 5.1",
+                        text = "Audio: " + detail.displayLanguages,
                         color = Color.Gray,
                         fontSize = 12.sp
                     )
@@ -684,8 +684,9 @@ fun DetailsScreen(
                             SpecRow(label = "Genres", value = detail.safeGenres.joinToString(", ") { it.name })
 
                             SpecRow(label = "Type", value = if (uiState.isTvShow) "TV Series" else "Movie")
-                            SpecRow(label = "Languages", value = "English (Original), Tamil, Hindi, Telugu, Malayalam")
-                            SpecRow(label = "Subtitles", value = "English, Hindi, Tamil (High Contrast)")
+                            SpecRow(label = "Original Language", value = detail.originalLanguageName)
+                            SpecRow(label = "Audio Tracks", value = detail.displayLanguages)
+                            SpecRow(label = "Subtitles", value = "${detail.originalLanguageName}, English [Multi-Sub]")
                             SpecRow(label = "Audio Formats", value = "Dolby Atmos, 5.1 Surround, Stereo")
                             SpecRow(label = "Video Quality", value = "4K UHD, HDR10+, Dolby Vision")
                         }

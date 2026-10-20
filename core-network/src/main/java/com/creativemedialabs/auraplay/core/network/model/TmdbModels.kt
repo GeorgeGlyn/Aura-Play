@@ -19,7 +19,8 @@ data class TmdbMediaItem(
     @SerializedName("media_type") val rawMediaType: String? = null,
     @SerializedName("vote_average") val voteAverage: Double = 0.0,
     @SerializedName("release_date") val releaseDate: String? = null,
-    @SerializedName("first_air_date") val firstAirDate: String? = null
+    @SerializedName("first_air_date") val firstAirDate: String? = null,
+    @SerializedName("original_language") val originalLanguage: String? = null
 ) {
     val isTvShow: Boolean
         get() = rawMediaType.equals("tv", ignoreCase = true) ||
@@ -37,7 +38,25 @@ data class TmdbMediaItem(
 
     val displayReleaseYear: String?
         get() = (releaseDate ?: firstAirDate)?.take(4)
+
+    val originalLanguageName: String
+        get() {
+            val code = originalLanguage?.trim()?.lowercase() ?: return "English"
+            return try {
+                val locale = java.util.Locale(code)
+                val display = locale.getDisplayLanguage(java.util.Locale.ENGLISH)
+                if (display.isNotBlank()) display else code.uppercase()
+            } catch (e: Exception) {
+                code.uppercase()
+            }
+        }
 }
+
+data class TmdbSpokenLanguage(
+    @SerializedName("iso_639_1") val iso6391: String? = null,
+    @SerializedName("name") val name: String? = null,
+    @SerializedName("english_name") val englishName: String? = null
+)
 
 data class MediaDetailResponse(
     @SerializedName("id") val id: Int,
@@ -51,6 +70,8 @@ data class MediaDetailResponse(
     @SerializedName("first_air_date") val firstAirDate: String? = null,
     @SerializedName("imdb_id") val imdbId: String? = null,
     @SerializedName("genres") val genres: List<Genre>? = null,
+    @SerializedName("original_language") val originalLanguage: String? = null,
+    @SerializedName("spoken_languages") val spokenLanguages: List<TmdbSpokenLanguage>? = null,
     @SerializedName("number_of_seasons") val numberOfSeasons: Int? = null,
     @SerializedName("number_of_episodes") val numberOfEpisodes: Int? = null,
     @SerializedName("seasons") val seasons: List<TmdbSeasonSummary>? = null
@@ -69,6 +90,33 @@ data class MediaDetailResponse(
 
     val displayTitle: String
         get() = title ?: name ?: "Unknown"
+
+    val originalLanguageName: String
+        get() {
+            val code = originalLanguage?.trim()?.lowercase() ?: return "English"
+            return try {
+                val locale = java.util.Locale(code)
+                val display = locale.getDisplayLanguage(java.util.Locale.ENGLISH)
+                if (display.isNotBlank()) display else code.uppercase()
+            } catch (e: Exception) {
+                code.uppercase()
+            }
+        }
+
+    val displayLanguages: String
+        get() {
+            val orig = originalLanguageName
+            val otherLangs = spokenLanguages.orEmpty()
+                .mapNotNull { it.englishName.takeIf { s -> !s.isNullOrBlank() } ?: it.name }
+                .filter { !it.equals(orig, ignoreCase = true) }
+                .distinct()
+
+            return if (otherLangs.isNotEmpty()) {
+                "$orig [Original], ${otherLangs.joinToString(", ")}"
+            } else {
+                "$orig [Original]"
+            }
+        }
 }
 
 data class ExternalIdsResponse(
