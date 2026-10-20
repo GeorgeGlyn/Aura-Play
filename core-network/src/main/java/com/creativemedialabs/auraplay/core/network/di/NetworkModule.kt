@@ -65,6 +65,7 @@ object NetworkModule {
         torBoxClient: com.creativemedialabs.auraplay.core.network.torbox.TorBoxClient,
         netMirrorClient: com.creativemedialabs.auraplay.core.network.netmirror.NetMirrorClient,
         headlessStreamExtractor: com.creativemedialabs.auraplay.core.network.resolver.HeadlessStreamExtractor,
+        torrentEngine: com.creativemedialabs.auraplay.core.network.torrent.TorrentEngine,
         okHttpClient: OkHttpClient
     ): MediaResolver {
         return com.creativemedialabs.auraplay.core.network.resolver.ModularMediaResolver(
@@ -79,6 +80,7 @@ object NetworkModule {
             torBoxClient = torBoxClient,
             netMirrorClient = netMirrorClient,
             headlessStreamExtractor = headlessStreamExtractor,
+            torrentEngine = torrentEngine,
             client = okHttpClient
         )
     }

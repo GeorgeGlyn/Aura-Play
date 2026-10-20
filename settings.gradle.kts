@@ -10,6 +10,13 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        maven {
+            setUrl("https://dl.frostwire.com/maven")
+            isAllowInsecureProtocol = true
+            content {
+                includeGroup("com.frostwire")
+            }
+        }
     }
 }
 

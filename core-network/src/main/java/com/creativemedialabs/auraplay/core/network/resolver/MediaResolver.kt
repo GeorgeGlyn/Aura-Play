@@ -315,6 +315,7 @@ class ModularMediaResolver(
     private val torBoxClient: com.creativemedialabs.auraplay.core.network.torbox.TorBoxClient,
     private val netMirrorClient: com.creativemedialabs.auraplay.core.network.netmirror.NetMirrorClient,
     private val headlessStreamExtractor: HeadlessStreamExtractor,
+    private val torrentEngine: com.creativemedialabs.auraplay.core.network.torrent.TorrentEngine,
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
@@ -322,7 +323,14 @@ class ModularMediaResolver(
 ) : MediaResolver {
 
     override suspend fun resolveMagnet(magnetUrl: String): Result<String> {
-        return torBoxClient.resolveAndStream(magnetUrl)
+        if (torBoxClient.isConfigured()) {
+            val debridRes = torBoxClient.resolveAndStream(magnetUrl)
+            if (debridRes.isSuccess) {
+                return debridRes
+            }
+        }
+        // Native BitTorrent fallback - returns magnetUrl directly for native engine
+        return Result.success(magnetUrl)
     }
 
     override suspend fun resolveStream(
@@ -485,6 +493,23 @@ class ModularMediaResolver(
                 }
             } catch (e: Exception) {
                 Log.w("ModularMediaResolver", "Sniffer error for $embedUrl: ${e.message}")
+            }
+        }
+
+        // 5. Fallback to Native BitTorrent Engine (100% Free Public Swarm P2P)
+        if (releasesRes.isSuccess) {
+            val topMagnet = releasesRes.getOrThrow()
+                .filter { !it.magnetUrl.isNullOrBlank() }
+                .maxByOrNull { it.seeds }
+                ?.magnetUrl
+            if (!topMagnet.isNullOrBlank()) {
+                Log.d("ModularMediaResolver", "Resolved native torrent magnet for free offline download: $topMagnet")
+                return@withContext Result.success(
+                    ResolvedStream(
+                        videoUrl = topMagnet,
+                        headers = emptyMap()
+                    )
+                )
             }
         }
 

@@ -26,7 +26,8 @@ class MediaDownloadWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted params: WorkerParameters,
     private val downloadDao: DownloadDao,
-    private val episodeDao: EpisodeDao
+    private val episodeDao: EpisodeDao,
+    private val torrentEngine: com.creativemedialabs.auraplay.core.network.torrent.TorrentEngine
 ) : CoroutineWorker(context, params) {
 
     companion object {
@@ -145,6 +146,47 @@ class MediaDownloadWorker @AssistedInject constructor(
                 localPath = outputFile.absolutePath,
                 progress = 0
             )
+        }
+
+        if (videoUrl.startsWith("magnet:", ignoreCase = true)) {
+            Log.d(TAG, "Starting native BitTorrent download for magnet: $videoUrl")
+            val saveFolder = outputFile.parentFile ?: File(applicationContext.getExternalFilesDir(null), "downloads/Torrents")
+            saveFolder.mkdirs()
+
+            val res = torrentEngine.downloadMagnet(
+                magnetUri = videoUrl,
+                saveDir = saveFolder,
+                onProgress = { p ->
+                    val speedFormatted = formatSpeed(p.downloadRateBytesPerSec)
+                    setProgressAsync(
+                        workDataOf(
+                            PROGRESS_KEY to p.progressPercent,
+                            SPEED_KEY to "$speedFormatted (${p.numSeeds} seeds)"
+                        )
+                    )
+                    downloadDao.updateProgress(mediaId, "DOWNLOADING", p.progressPercent)
+                    if (seriesId > 0 && seasonNumber > 0 && episodeNumber > 0) {
+                        episodeDao.updateDownloadStatus(
+                            seriesId = seriesId,
+                            seasonNumber = seasonNumber,
+                            episodeNumber = episodeNumber,
+                            status = "DOWNLOADING",
+                            localPath = outputFile.absolutePath,
+                            progress = p.progressPercent
+                        )
+                    }
+                }
+            )
+
+            if (res.isSuccess) {
+                val target = res.getOrThrow()
+                markCompleted(mediaId, mediaType, title, posterPath, target, seriesId, seasonNumber, episodeNumber)
+                return@withContext Result.success(Data.Builder().putString("filePath", target.absolutePath).build())
+            } else {
+                Log.e(TAG, "Native torrent download failed: ${res.exceptionOrNull()?.message}")
+                markFailed(mediaId, mediaType, title, posterPath, seriesId, seasonNumber, episodeNumber)
+                return@withContext Result.failure()
+            }
         }
 
         try {
