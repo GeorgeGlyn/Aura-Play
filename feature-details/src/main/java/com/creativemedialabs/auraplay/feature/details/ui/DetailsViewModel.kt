@@ -220,6 +220,29 @@ class DetailsViewModel @Inject constructor(
     fun downloadEpisode(context: Context, episode: TmdbEpisodeItem) {
         val detail = _uiState.value.mediaDetail ?: return
         viewModelScope.launch {
+            val uniqueEpId = (mediaId % 100000) * 10000 + (episode.seasonNumber * 100) + episode.episodeNumber
+            val epTitle = "${detail.name ?: detail.title ?: "TV Show"} S${String.format("%02d", episode.seasonNumber)}E${String.format("%02d", episode.episodeNumber)}"
+
+            // 1. Immediately insert into Room DB as QUEUED so it appears in Downloads page instantly!
+            val initialDownload = DownloadEntity(
+                mediaId = uniqueEpId,
+                mediaType = "tv",
+                title = epTitle,
+                localFilePath = "",
+                posterPath = detail.posterPath,
+                downloadStatus = "QUEUED",
+                progressPercentage = 0
+            )
+            downloadDao.insertOrUpdate(initialDownload)
+            episodeDao.updateDownloadStatus(
+                seriesId = mediaId,
+                seasonNumber = episode.seasonNumber,
+                episodeNumber = episode.episodeNumber,
+                status = "QUEUED",
+                localPath = "",
+                progress = 0
+            )
+
             _uiState.value = _uiState.value.copy(isResolvingStream = true, errorMessage = null)
             mediaResolver.resolveDownloadStream(
                 tmdbId = mediaId,
@@ -228,8 +251,10 @@ class DetailsViewModel @Inject constructor(
                 episodeNumber = episode.episodeNumber
             ).fold(
                 onSuccess = { stream ->
-                    _uiState.value = _uiState.value.copy(isResolvingStream = false)
-                    val uniqueEpId = (mediaId % 100000) * 10000 + (episode.seasonNumber * 100) + episode.episodeNumber
+                    _uiState.value = _uiState.value.copy(
+                        isResolvingStream = false,
+                        castSuccessMessage = "Episode S${episode.seasonNumber}E${episode.episodeNumber} download queued!"
+                    )
                     val inputData = Data.Builder()
                         .putInt(MediaDownloadWorker.KEY_MEDIA_ID, uniqueEpId)
                         .putString(MediaDownloadWorker.KEY_VIDEO_URL, stream.videoUrl)
@@ -247,12 +272,24 @@ class DetailsViewModel @Inject constructor(
                         .build()
 
                     WorkManager.getInstance(context).enqueue(downloadWork)
-                    _uiState.value = _uiState.value.copy(castSuccessMessage = "Episode S${episode.seasonNumber}E${episode.episodeNumber} download queued!")
                 },
                 onFailure = { error ->
                     _uiState.value = _uiState.value.copy(
                         isResolvingStream = false,
                         errorMessage = "Download error: ${error.message}"
+                    )
+                    downloadDao.insertOrUpdate(
+                        initialDownload.copy(
+                            downloadStatus = "FAILED: ${error.message ?: "No stream available"}"
+                        )
+                    )
+                    episodeDao.updateDownloadStatus(
+                        seriesId = mediaId,
+                        seasonNumber = episode.seasonNumber,
+                        episodeNumber = episode.episodeNumber,
+                        status = "MISSING",
+                        localPath = null,
+                        progress = 0
                     )
                 }
             )
@@ -288,12 +325,24 @@ class DetailsViewModel @Inject constructor(
     fun startDownload(context: Context) {
         val detail = _uiState.value.mediaDetail ?: return
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isResolvingStream = true, errorMessage = null)
             val isTv = _uiState.value.isTvShow
             val targetType = if (isTv) "tv" else "movie"
             val seasonNum = if (isTv) (_uiState.value.selectedSeason.takeIf { it > 0 } ?: 1) else null
             val episodeNum = if (isTv) (_uiState.value.seasonEpisodes.firstOrNull()?.episodeNumber ?: 1) else null
 
+            // 1. Immediately insert into Room DB as QUEUED so it appears in Downloads page instantly!
+            val initialDownload = DownloadEntity(
+                mediaId = mediaId,
+                mediaType = targetType,
+                title = detail.displayTitle,
+                localFilePath = "",
+                posterPath = detail.posterPath,
+                downloadStatus = "QUEUED",
+                progressPercentage = 0
+            )
+            downloadDao.insertOrUpdate(initialDownload)
+
+            _uiState.value = _uiState.value.copy(isResolvingStream = true, errorMessage = null)
             mediaResolver.resolveDownloadStream(
                 tmdbId = mediaId,
                 mediaType = targetType,
@@ -301,7 +350,10 @@ class DetailsViewModel @Inject constructor(
                 episodeNumber = episodeNum
             ).fold(
                 onSuccess = { stream ->
-                    _uiState.value = _uiState.value.copy(isResolvingStream = false)
+                    _uiState.value = _uiState.value.copy(
+                        isResolvingStream = false,
+                        castSuccessMessage = "Download queued in background!"
+                    )
                     val inputData = Data.Builder()
                         .putInt(MediaDownloadWorker.KEY_MEDIA_ID, mediaId)
                         .putString(MediaDownloadWorker.KEY_VIDEO_URL, stream.videoUrl)
@@ -322,12 +374,16 @@ class DetailsViewModel @Inject constructor(
                         .build()
 
                     WorkManager.getInstance(context).enqueue(downloadWork)
-                    _uiState.value = _uiState.value.copy(castSuccessMessage = "Download queued in background!")
                 },
                 onFailure = { error ->
                     _uiState.value = _uiState.value.copy(
                         isResolvingStream = false,
                         errorMessage = "Download error: ${error.message}"
+                    )
+                    downloadDao.insertOrUpdate(
+                        initialDownload.copy(
+                            downloadStatus = "FAILED: ${error.message ?: "No stream available"}"
+                        )
                     )
                 }
             )

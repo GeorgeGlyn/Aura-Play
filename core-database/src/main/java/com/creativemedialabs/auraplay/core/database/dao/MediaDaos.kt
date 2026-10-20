@@ -50,6 +50,12 @@ interface DownloadDao {
     @Query("SELECT * FROM downloads WHERE mediaId = :mediaId LIMIT 1")
     suspend fun getDownload(mediaId: Int): DownloadEntity?
 
+    @Query("UPDATE downloads SET downloadStatus = :status, progressPercentage = :progress WHERE mediaId = :mediaId")
+    suspend fun updateProgress(mediaId: Int, status: String, progress: Int)
+
+    @Query("UPDATE downloads SET downloadStatus = :status WHERE mediaId = :mediaId")
+    suspend fun updateStatus(mediaId: Int, status: String)
+
     @Query("DELETE FROM downloads WHERE mediaId = :mediaId")
     suspend fun deleteDownload(mediaId: Int)
 }

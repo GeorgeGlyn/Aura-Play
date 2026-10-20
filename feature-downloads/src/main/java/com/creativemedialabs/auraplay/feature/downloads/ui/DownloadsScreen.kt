@@ -531,10 +531,51 @@ private fun DownloadItem(
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold
                         )
+                    } else if (download.downloadStatus == "QUEUED" || download.downloadStatus == "PREPARING") {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(13.dp),
+                            color = Color(0xFFE50914),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Queued • Resolving stream...",
+                            color = Color(0xFFE50914),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    } else if (download.downloadStatus.startsWith("FAILED")) {
+                        val reason = download.downloadStatus.removePrefix("FAILED: ").ifBlank { "Stream unavailable for offline download" }
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.ErrorOutline,
+                                    contentDescription = null,
+                                    tint = Color(0xFFE50914),
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Download Unavailable",
+                                    color = Color(0xFFE50914),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = reason,
+                                color = Color(0xFFAAAAAA),
+                                fontSize = 11.sp,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                lineHeight = 15.sp
+                            )
+                        }
                     } else {
                         Text(
                             text = download.downloadStatus,
-                            color = if (download.downloadStatus == "FAILED") Color(0xFFE50914) else Color.Gray,
+                            color = Color.Gray,
                             fontSize = 12.sp
                         )
                     }
@@ -575,6 +616,18 @@ private fun DownloadItem(
                         contentDescription = "Corrupt file",
                         tint = Color(0xFFFF9800),
                         modifier = Modifier.size(22.dp)
+                    )
+                }
+            } else if (download.downloadStatus.startsWith("FAILED")) {
+                IconButton(onClick = {
+                    val reason = download.downloadStatus.removePrefix("FAILED: ").ifBlank { "Stream unavailable for offline download. Play online with zero ads or configure Debrid in Settings." }
+                    android.widget.Toast.makeText(context, reason, android.widget.Toast.LENGTH_LONG).show()
+                }) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = "Error info",
+                        tint = Color(0xFFE50914),
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }

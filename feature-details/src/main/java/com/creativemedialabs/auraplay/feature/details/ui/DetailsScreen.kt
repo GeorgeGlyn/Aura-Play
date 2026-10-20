@@ -264,6 +264,7 @@ fun DetailsScreen(
                     val isMovieDownloaded = currentDownload?.downloadStatus == "COMPLETED" &&
                         currentDownload?.localFilePath?.let { java.io.File(it).exists() && java.io.File(it).length() > 500 * 1024 } == true
                     val isMovieDownloading = currentDownload?.downloadStatus == "DOWNLOADING"
+                    val isMovieQueued = currentDownload?.downloadStatus == "QUEUED" || currentDownload?.downloadStatus == "PREPARING" || uiState.isResolvingStream
                     val movieDownloadProgress = currentDownload?.progressPercentage ?: 0
 
                     // Big Solid White "Play" Button
@@ -305,11 +306,11 @@ fun DetailsScreen(
                         onClick = {
                             if (isMovieDownloaded && !currentDownload?.localFilePath.isNullOrBlank()) {
                                 onNavigateToPlayer(currentDownload!!.localFilePath)
-                            } else if (!isMovieDownloading) {
+                            } else if (!isMovieDownloading && !isMovieQueued) {
                                 viewModel.startDownload(context)
                             }
                         },
-                        enabled = !isMovieDownloading,
+                        enabled = !isMovieDownloading && !isMovieQueued,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = if (isMovieDownloaded) Color(0xFF1B5E20) else Color(0xFF262626),
                             contentColor = Color.White
@@ -327,6 +328,14 @@ fun DetailsScreen(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("Downloading $movieDownloadProgress%", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                        } else if (isMovieQueued) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                color = Color(0xFFE50914),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Queued...", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                         } else if (isMovieDownloaded) {
                             Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF4CAF50))
                             Spacer(modifier = Modifier.width(8.dp))
@@ -624,16 +633,17 @@ fun DetailsScreen(
                                                 }
 
                                                 // Download button
+                                                val isEpQueued = dbEp?.downloadStatus == "QUEUED" || (uiState.isResolvingStream && ep.episodeNumber == uiState.seasonEpisodes.firstOrNull()?.episodeNumber)
                                                 IconButton(
                                                     onClick = {
                                                         if (isEpDownloaded && !dbEp?.localFilePath.isNullOrBlank()) {
                                                             onNavigateToPlayer(dbEp!!.localFilePath!!)
-                                                        } else if (!isEpDownloading) {
+                                                        } else if (!isEpDownloading && !isEpQueued) {
                                                             viewModel.downloadEpisode(context, ep)
                                                         }
                                                     }
                                                 ) {
-                                                    if (isEpDownloading) {
+                                                    if (isEpDownloading || isEpQueued) {
                                                         CircularProgressIndicator(
                                                             modifier = Modifier.size(24.dp),
                                                             color = Color(0xFFE50914),
