@@ -42,6 +42,7 @@ data class NetMirrorEpisode(
 
 data class NetMirrorPlayerResponse(
     @SerializedName("status") val status: String? = null,
+    @SerializedName("usertoken") val userToken: String? = null,
     @SerializedName("video_link") val videoLink: String? = null,
     @SerializedName("referer") val referer: String? = null,
     @SerializedName("title") val title: String? = null

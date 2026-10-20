@@ -341,6 +341,11 @@ fun ExoPlayerStreamPlayer(
             .build()
             .apply {
                 try {
+                    if (videoUrl.contains("220884") || videoUrl.contains("abuse", ignoreCase = true)) {
+                        Log.w("PlayerScreen", "Detected anti-abuse placeholder video, switching to web backup")
+                        onError()
+                        return@apply
+                    }
                     val uri = if (videoUrl.startsWith("/")) {
                         android.net.Uri.fromFile(java.io.File(videoUrl))
                     } else {
@@ -351,6 +356,7 @@ fun ExoPlayerStreamPlayer(
                     playWhenReady = true
                 } catch (e: Exception) {
                     Log.e("PlayerScreen", "ExoPlayer setup failed", e)
+                    onError()
                 }
             }
     }

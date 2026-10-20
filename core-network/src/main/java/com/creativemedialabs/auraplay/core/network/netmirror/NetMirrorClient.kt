@@ -84,6 +84,7 @@ class NetMirrorClient(
             for (query in searchQueries) {
                 for (ott in ottPlatforms) {
                     try {
+                        kotlinx.coroutines.delay(80) // Prevent burst rate-limiting
                         val searchUrl = "$base/newtv/search.php?s=${URLEncoder.encode(query, "UTF-8")}"
                         val searchReq = Request.Builder()
                             .url(searchUrl)
@@ -147,6 +148,15 @@ class NetMirrorClient(
                         if (!playerBody.trim().startsWith("{")) continue
                         val playerData = gson.fromJson(playerBody, NetMirrorPlayerResponse::class.java)
 
+                        // If NetMirror returned OTP challenge or abuse block, skip it
+                        if (playerData.status.equals("otp", ignoreCase = true) || 
+                            playerData.userToken.equals("none", ignoreCase = true) ||
+                            playerBody.contains("\"status\":\"otp\"") ||
+                            playerBody.contains("\"usertoken\":\"none\"")) {
+                            Log.w("NetMirrorClient", "NetMirror returned OTP rate-limit / abuse block for $ott, skipping")
+                            continue
+                        }
+
                         val videoLink = playerData.videoLink
                         if (!videoLink.isNullOrBlank() && videoLink.startsWith("http")) {
                             val referer = playerData.referer ?: "https://net52.cc"
@@ -155,8 +165,10 @@ class NetMirrorClient(
                                 "Referer" to referer
                             )
                             val resolvedUrl = resolveBestStreamUrl(videoLink, referer)
-                            Log.d("NetMirrorClient", "Successfully resolved NetMirror stream: $resolvedUrl ($ott)")
-                            return@withContext Result.success(Pair(resolvedUrl, headers))
+                            if (resolvedUrl.isNotBlank() && !resolvedUrl.contains("220884")) {
+                                Log.d("NetMirrorClient", "Successfully resolved NetMirror stream: $resolvedUrl ($ott)")
+                                return@withContext Result.success(Pair(resolvedUrl, headers))
+                            }
                         }
                     } catch (e: Exception) {
                         Log.w("NetMirrorClient", "Error searching $query on $ott: ${e.message}")
@@ -181,6 +193,12 @@ class NetMirrorClient(
             if (!resp.isSuccessful) return masterUrl
             val body = resp.body?.string().orEmpty()
             if (!body.contains("#EXTM3U")) return masterUrl
+
+            // If master playlist points to the known NetMirror anti-abuse warning video (220884)
+            if (body.contains("/220884/") || body.contains("220884") || body.contains("abuse", ignoreCase = true)) {
+                Log.w("NetMirrorClient", "NetMirror returned anti-abuse warning playlist (220884)")
+                return ""
+            }
 
             // Extract valid CDN host from playlist (e.g. s21.freecdn4.top)
             val cdnHostMatch = Regex("https://([a-zA-Z0-9.\\-_]+\\.[a-zA-Z0-9]+)/files/").find(body)

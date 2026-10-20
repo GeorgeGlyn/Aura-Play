@@ -401,17 +401,19 @@ class ModularMediaResolver(
                     )
                     if (netMirrorRes.isSuccess) {
                         val (m3u8Url, _) = netMirrorRes.getOrThrow()
-                        results.add(
-                            MediaRelease(
-                                title = "NetMirror Master Stream [1080p Multi-Audio • Subtitles]",
-                                directStreamUrl = m3u8Url,
-                                quality = "1080p FHD",
-                                size = "High-Speed CDN",
-                                seeds = 99999,
-                                indexer = "NetMirror OTT Master (Native ExoPlayer)",
-                                isDebridCached = true
+                        if (m3u8Url.isNotBlank() && !m3u8Url.contains("220884") && !m3u8Url.contains("abuse", ignoreCase = true)) {
+                            results.add(
+                                MediaRelease(
+                                    title = "NetMirror Master Stream [1080p Multi-Audio • Subtitles]",
+                                    directStreamUrl = m3u8Url,
+                                    quality = "1080p FHD",
+                                    size = "High-Speed CDN",
+                                    seeds = 99999,
+                                    indexer = "NetMirror OTT Master (Native ExoPlayer)",
+                                    isDebridCached = true
+                                )
                             )
-                        )
+                        }
                     }
                 } catch (e: Exception) {
                     Log.w("ModularMediaResolver", "NetMirror search error: ${e.message}")
