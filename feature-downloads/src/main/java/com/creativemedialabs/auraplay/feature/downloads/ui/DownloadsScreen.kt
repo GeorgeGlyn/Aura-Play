@@ -1,6 +1,7 @@
 package com.creativemedialabs.auraplay.feature.downloads.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -39,6 +40,7 @@ fun DownloadsScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
 
     var activeTab by remember { mutableIntStateOf(0) } // 0: Downloads, 1: Monitored Series
+    var showDebridDialog by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -72,23 +74,30 @@ fun DownloadsScreen(
                         Text("Sync All", color = Color(0xFFE50914), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 } else {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable { showDebridDialog = true }
+                            .padding(horizontal = 6.dp, vertical = 4.dp)
+                    ) {
                         Icon(
                             Icons.Default.Settings,
-                            contentDescription = "Smart Downloads",
-                            tint = Color.LightGray,
+                            contentDescription = "Stream Settings",
+                            tint = Color(0xFFE50914),
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "Smart Downloads",
-                            color = Color.LightGray,
+                            text = "Debrid Settings",
+                            color = Color.White,
                             fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
             }
+
 
             // Tab Selector
             TabRow(
@@ -332,8 +341,107 @@ fun DownloadsScreen(
                 }
             }
         }
+
+        if (showDebridDialog) {
+            var apiKeyText by remember { mutableStateOf(viewModel.getDebridApiKey()) }
+            var selectedService by remember { mutableStateOf(viewModel.getDebridService()) }
+
+            AlertDialog(
+                onDismissRequest = { showDebridDialog = false },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.CloudSync, contentDescription = null, tint = Color(0xFFE50914))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Debrid Stream Settings", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    }
+                },
+                text = {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = "Connect your Debrid account to instantly stream and download cached 4K/1080p torrents with zero buffering.",
+                            color = Color.LightGray,
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp
+                        )
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        // Service selector pills
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            listOf("realdebrid" to "Real-Debrid", "torbox" to "TorBox", "alldebrid" to "AllDebrid").forEach { (id, label) ->
+                                val isSelected = selectedService == id
+                                Surface(
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = if (isSelected) Color(0xFFE50914) else Color(0xFF222222),
+                                    modifier = Modifier.clickable { selectedService = id }
+                                ) {
+                                    Text(
+                                        text = label,
+                                        color = Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        OutlinedTextField(
+                            value = apiKeyText,
+                            onValueChange = { apiKeyText = it },
+                            label = { Text("API Token / Key") },
+                            placeholder = { Text("Paste your API key here") },
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color(0xFFE50914),
+                                unfocusedBorderColor = Color.Gray,
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "💡 Note: Debrid streaming APIs (TorBox / Real-Debrid) require paid subscriptions on their platforms. AuraPlay includes built-in 100% Free Instant Web Streams and VLC torrent opening without requiring any paid account or token.",
+                            color = Color(0xFF4CAF50),
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Leave empty to browse public torrent releases and open in VLC / external torrent app.",
+                            color = Color.Gray,
+                            fontSize = 11.sp
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            viewModel.saveDebridSettings(apiKeyText, selectedService)
+                            showDebridDialog = false
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE50914))
+                    ) {
+                        Text("Save")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDebridDialog = false }) {
+                        Text("Cancel", color = Color.Gray)
+                    }
+                },
+                containerColor = Color(0xFF181818)
+            )
+        }
     }
 }
+
 
 
 @Composable

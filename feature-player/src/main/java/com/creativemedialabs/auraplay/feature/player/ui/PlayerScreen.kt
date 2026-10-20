@@ -5,9 +5,19 @@ import android.content.Context
 import android.graphics.Color as AndroidColor
 import android.graphics.Typeface
 import android.media.AudioManager
+import android.util.Log
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -42,9 +52,262 @@ import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
 
+private fun isWebStream(url: String): Boolean {
+    val clean = url.substringBefore('?').lowercase()
+    if (clean.endsWith(".mp4") || clean.endsWith(".m3u8") || clean.endsWith(".mkv") || clean.endsWith(".mpd") || url.contains(".m3u8")) {
+        return false
+    }
+    val lower = url.lowercase()
+    return lower.contains("autoembed") ||
+           lower.contains("vidlink") ||
+           lower.contains("vidsrc") ||
+           lower.contains("embed")
+}
+
 @OptIn(UnstableApi::class)
 @Composable
 fun PlayerScreen(
+    videoUrl: String,
+    onBack: () -> Unit
+) {
+    if (isWebStream(videoUrl)) {
+        WebStreamPlayer(videoUrl = videoUrl, onBack = onBack)
+    } else {
+        ExoPlayerStreamPlayer(videoUrl = videoUrl, onBack = onBack)
+    }
+}
+
+@Composable
+fun WebStreamPlayer(
+    videoUrl: String,
+    onBack: () -> Unit
+) {
+    var showOverlay by remember { mutableStateOf(true) }
+    var isLoading by remember { mutableStateOf(true) }
+    var webViewRef by remember { mutableStateOf<WebView?>(null) }
+    var customView by remember { mutableStateOf<android.view.View?>(null) }
+    var customViewCallback by remember { mutableStateOf<WebChromeClient.CustomViewCallback?>(null) }
+
+    // Auto-hide top controls after 4 seconds
+    LaunchedEffect(showOverlay) {
+        if (showOverlay) {
+            delay(4000)
+            showOverlay = false
+        }
+    }
+
+    // Intercept back button to dismiss fullscreen or exit player
+    BackHandler {
+        if (customView != null) {
+            customViewCallback?.onCustomViewHidden()
+            customView = null
+            customViewCallback = null
+        } else {
+            webViewRef?.destroy()
+            onBack()
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            webViewRef?.destroy()
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+    ) {
+        if (customView != null) {
+            AndroidView(
+                factory = { customView!! },
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            AndroidView(
+                factory = { ctx ->
+                    WebView(ctx).apply {
+                        webViewRef = this
+                        layoutParams = ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                        setBackgroundColor(android.graphics.Color.BLACK)
+
+                        settings.apply {
+                            javaScriptEnabled = true
+                            domStorageEnabled = true
+                            mediaPlaybackRequiresUserGesture = false
+                            loadWithOverviewMode = true
+                            useWideViewPort = true
+                            databaseEnabled = true
+                            allowFileAccess = true
+                            allowContentAccess = true
+                            setSupportMultipleWindows(false)
+                            javaScriptCanOpenWindowsAutomatically = false
+                            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                            userAgentString = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+                        }
+
+                        webViewClient = object : WebViewClient() {
+                            override fun onPageFinished(view: WebView?, url: String?) {
+                                super.onPageFinished(view, url)
+                                isLoading = false
+                            }
+
+                            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                                val uri = request?.url ?: return false
+                                val scheme = uri.scheme?.lowercase() ?: ""
+                                if (scheme != "http" && scheme != "https") {
+                                    return true // block external apps / market
+                                }
+                                val host = uri.host?.lowercase() ?: ""
+                                // Only block known intrusive ad popups on main frame
+                                if (request.isForMainFrame) {
+                                    val isAd = host.contains("adsterra") ||
+                                               host.contains("popcash") ||
+                                               host.contains("bet365") ||
+                                               host.contains("histats") ||
+                                               host.contains("onclick") ||
+                                               host.contains("traffic")
+                                    if (isAd) return true
+                                }
+                                return false // allow player iframes, CDNs, and media streams
+                            }
+                        }
+
+                        webChromeClient = object : WebChromeClient() {
+                            override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                                if (newProgress > 60) {
+                                    isLoading = false
+                                }
+                            }
+
+                            override fun onShowCustomView(view: android.view.View?, callback: CustomViewCallback?) {
+                                customView = view
+                                customViewCallback = callback
+                            }
+
+                            override fun onHideCustomView() {
+                                customViewCallback?.onCustomViewHidden()
+                                customView = null
+                                customViewCallback = null
+                            }
+                        }
+
+                        loadUrl(videoUrl)
+                    }
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
+        // Loading spinner
+        if (isLoading) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = Color(0xFFE50914), strokeWidth = 3.dp)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text("Loading Web Stream...", color = Color.White, fontSize = 13.sp)
+                }
+            }
+        }
+
+        // Top Bar Overlay
+        AnimatedVisibility(
+            visible = showOverlay,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.TopCenter)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        androidx.compose.ui.graphics.Brush.verticalGradient(
+                            listOf(Color(0xDD000000), Color.Transparent)
+                        )
+                    )
+                    .statusBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(
+                    onClick = {
+                        webViewRef?.destroy()
+                        onBack()
+                    },
+                    modifier = Modifier.background(Color(0x66000000), CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = Color.White
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "AuraPlay Free Web Stream",
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Ad-Blocked • 1080p FHD • Zero Config",
+                        color = Color(0xFF4CAF50),
+                        fontSize = 11.sp
+                    )
+                }
+
+                IconButton(
+                    onClick = { webViewRef?.reload() },
+                    modifier = Modifier.background(Color(0x66000000), CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Reload",
+                        tint = Color.White
+                    )
+                }
+            }
+        }
+
+        // Persistent floating back button when top bar is hidden
+        if (!showOverlay) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .statusBarsPadding()
+                    .padding(16.dp)
+            ) {
+                IconButton(
+                    onClick = {
+                        webViewRef?.destroy()
+                        onBack()
+                    },
+                    modifier = Modifier.background(Color(0x77000000), CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = Color.White
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(UnstableApi::class)
+@Composable
+fun ExoPlayerStreamPlayer(
     videoUrl: String,
     onBack: () -> Unit
 ) {
@@ -52,16 +315,26 @@ fun PlayerScreen(
     val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     val activity = context as? Activity
 
-    // Build ExoPlayer with DefaultMediaSourceFactory
+    // Build ExoPlayer with DefaultMediaSourceFactory and NetMirror HTTP headers
     val exoPlayer = remember {
-        val dataSourceFactory = DefaultDataSource.Factory(context)
+        val httpDataSourceFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
+            .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:136.0) Gecko/20100101 Firefox/136.0 /OS.GatuNewTV v1.0")
+            .setDefaultRequestProperties(
+                mapOf("Referer" to "https://net52.cc")
+            )
+            .setAllowCrossProtocolRedirects(true)
+        val dataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
         ExoPlayer.Builder(context)
             .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
             .build()
             .apply {
-                setMediaItem(MediaItem.fromUri(videoUrl))
-                prepare()
-                playWhenReady = true
+                try {
+                    setMediaItem(MediaItem.fromUri(videoUrl))
+                    prepare()
+                    playWhenReady = true
+                } catch (e: Exception) {
+                    Log.e("PlayerScreen", "ExoPlayer setup failed", e)
+                }
             }
     }
 
@@ -95,6 +368,10 @@ fun PlayerScreen(
                 if (state == Player.STATE_READY) {
                     totalDuration = exoPlayer.duration.coerceAtLeast(1L)
                 }
+            }
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                Log.e("PlayerScreen", "ExoPlayer playback error: ${error.message}", error)
+                gestureIndicatorText = "Stream error: ${error.errorCodeName}"
             }
         }
         exoPlayer.addListener(listener)

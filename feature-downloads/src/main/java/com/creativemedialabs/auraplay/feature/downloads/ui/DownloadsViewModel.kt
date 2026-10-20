@@ -9,6 +9,7 @@ import com.creativemedialabs.auraplay.core.database.dao.MonitoredSeriesDao
 import com.creativemedialabs.auraplay.core.database.entity.DownloadEntity
 import com.creativemedialabs.auraplay.core.database.entity.MonitoredSeriesEntity
 import com.creativemedialabs.auraplay.feature.downloads.worker.SeriesMonitorWorker
+import com.creativemedialabs.auraplay.core.network.prefs.AuraPreferences
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -19,10 +20,20 @@ import javax.inject.Inject
 @HiltViewModel
 class DownloadsViewModel @Inject constructor(
     private val downloadDao: DownloadDao,
-    private val monitoredSeriesDao: MonitoredSeriesDao
+    private val monitoredSeriesDao: MonitoredSeriesDao,
+    private val preferences: AuraPreferences
 ) : ViewModel() {
 
+    fun getDebridApiKey(): String = preferences.debridApiKey ?: ""
+    fun getDebridService(): String = preferences.debridService
+
+    fun saveDebridSettings(key: String, service: String) {
+        preferences.debridApiKey = key.trim()
+        preferences.debridService = service
+    }
+
     val downloads: StateFlow<List<DownloadEntity>> = downloadDao
+
         .getAllDownloads()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 

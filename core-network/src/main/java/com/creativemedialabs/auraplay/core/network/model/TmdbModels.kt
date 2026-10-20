@@ -32,6 +32,7 @@ data class MediaDetailResponse(
     @SerializedName("vote_average") val voteAverage: Double = 0.0,
     @SerializedName("release_date") val releaseDate: String? = null,
     @SerializedName("first_air_date") val firstAirDate: String? = null,
+    @SerializedName("imdb_id") val imdbId: String? = null,
     @SerializedName("genres") val genres: List<Genre>? = null,
     @SerializedName("number_of_seasons") val numberOfSeasons: Int? = null,
     @SerializedName("number_of_episodes") val numberOfEpisodes: Int? = null,
@@ -40,6 +41,12 @@ data class MediaDetailResponse(
     val safeGenres: List<Genre> get() = genres ?: emptyList()
     val safeSeasons: List<TmdbSeasonSummary> get() = seasons ?: emptyList()
 }
+
+data class ExternalIdsResponse(
+    @SerializedName("id") val id: Int,
+    @SerializedName("imdb_id") val imdbId: String? = null
+)
+
 
 
 data class Genre(

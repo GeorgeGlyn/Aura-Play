@@ -2,7 +2,8 @@ package com.creativemedialabs.auraplay.core.network.di
 
 import com.creativemedialabs.auraplay.core.network.api.TmdbApi
 import com.creativemedialabs.auraplay.core.network.resolver.MediaResolver
-import com.creativemedialabs.auraplay.core.network.resolver.MockMediaResolver
+
+import com.google.gson.Gson
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -16,6 +17,10 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
+
+    @Provides
+    @Singleton
+    fun provideGson(): Gson = Gson()
 
     @Provides
     @Singleton
@@ -45,7 +50,35 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideMediaResolver(): MediaResolver {
-        return MockMediaResolver()
+    fun provideNetMirrorClient(
+        okHttpClient: OkHttpClient,
+        gson: Gson
+    ): com.creativemedialabs.auraplay.core.network.netmirror.NetMirrorClient {
+        return com.creativemedialabs.auraplay.core.network.netmirror.NetMirrorClient(okHttpClient, gson)
+    }
+
+    @Provides
+    @Singleton
+    fun provideMediaResolver(
+        preferences: com.creativemedialabs.auraplay.core.network.prefs.AuraPreferences,
+        repository: com.creativemedialabs.auraplay.core.network.repository.TmdbRepository,
+        torBoxClient: com.creativemedialabs.auraplay.core.network.torbox.TorBoxClient,
+        netMirrorClient: com.creativemedialabs.auraplay.core.network.netmirror.NetMirrorClient,
+        okHttpClient: OkHttpClient
+    ): MediaResolver {
+        return com.creativemedialabs.auraplay.core.network.resolver.ModularMediaResolver(
+            providers = listOf(
+                com.creativemedialabs.auraplay.core.network.resolver.NetMirrorStreamProvider(netMirrorClient, repository),
+                com.creativemedialabs.auraplay.core.network.resolver.TorrentioDebridStreamProvider(preferences, repository, okHttpClient),
+                com.creativemedialabs.auraplay.core.network.resolver.FreeEmbedStreamProvider(okHttpClient),
+                com.creativemedialabs.auraplay.core.network.resolver.PublicDomainMasterStreamProvider()
+            ),
+            preferences = preferences,
+            repository = repository,
+            torBoxClient = torBoxClient,
+            netMirrorClient = netMirrorClient,
+            client = okHttpClient
+        )
     }
 }
+

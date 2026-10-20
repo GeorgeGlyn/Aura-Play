@@ -93,5 +93,19 @@ class TmdbRepository @Inject constructor(
             Result.failure(e)
         }
     }
+
+    suspend fun getImdbId(mediaType: String, mediaId: Int): String? = withContext(Dispatchers.IO) {
+        try {
+            val response = api.getExternalIds(
+                mediaType = mediaType,
+                mediaId = mediaId,
+                apiKey = BuildConfig.TMDB_API_KEY
+            )
+            response.imdbId
+        } catch (e: Exception) {
+            null
+        }
+    }
 }
+
 

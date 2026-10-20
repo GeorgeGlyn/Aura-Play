@@ -1,5 +1,11 @@
 package com.creativemedialabs.auraplay.feature.details.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -38,6 +44,7 @@ import com.creativemedialabs.auraplay.core.network.model.TmdbMediaItem
 private const val TMDB_POSTER_BASE = "https://image.tmdb.org/t/p/w500"
 private const val TMDB_BACKDROP_BASE = "https://image.tmdb.org/t/p/w1280"
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DetailsScreen(
     mediaId: Int,
@@ -354,6 +361,13 @@ fun DetailsScreen(
                         }
 
                         ActionIconColumn(
+                            icon = Icons.Default.Hub,
+                            label = "Sources (Prowlarr)",
+                            active = uiState.showReleaseSheet,
+                            onClick = { viewModel.searchReleasesForMedia() }
+                        )
+
+                        ActionIconColumn(
                             icon = Icons.Default.ThumbUp,
                             label = "Rate",
                             onClick = {}
@@ -566,6 +580,16 @@ fun DetailsScreen(
                                                     )
                                                 }
 
+                                                // Episode Sources button
+                                                IconButton(onClick = { viewModel.searchReleasesForEpisode(ep) }) {
+                                                    Icon(
+                                                        Icons.Default.Hub,
+                                                        contentDescription = "Episode Sources",
+                                                        tint = Color.LightGray,
+                                                        modifier = Modifier.size(20.dp)
+                                                    )
+                                                }
+
                                                 // Download button
                                                 IconButton(
                                                     onClick = { viewModel.downloadEpisode(context, ep) }
@@ -737,6 +761,258 @@ fun DetailsScreen(
             },
             containerColor = Color(0xFF181818)
         )
+    }
+
+    if (uiState.showReleaseSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { viewModel.closeReleaseSheet() },
+            containerColor = Color(0xFF141414),
+            contentColor = Color.White
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 6.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Hub, contentDescription = null, tint = Color(0xFFE50914), modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Available Sources (Prowlarr)",
+                                color = Color.White,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Text(
+                            text = uiState.releaseSearchTitle,
+                            color = Color.Gray,
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    IconButton(onClick = { viewModel.closeReleaseSheet() }) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Gray)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Tip banner
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0x1AE50914)),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Bolt, contentDescription = null, tint = Color(0xFFE50914), modifier = Modifier.size(22.dp))
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "Free Instant Web Streams & P2P Torrents",
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Tap 'Play Stream' on Server 1 or 2 for instant 100% Free streaming (no account required). Torrent releases can be opened in VLC / LibreTorrent, or streamed via Debrid (paid).",
+                                color = Color(0xFFCCCCCC),
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (uiState.isSearchingReleases) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(180.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator(color = Color(0xFFE50914))
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text("Searching Prowlarr & Torrent Indexers...", color = Color.Gray, fontSize = 13.sp)
+                        }
+                    }
+                } else if (uiState.availableReleases.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(140.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("No releases found on indexers.", color = Color.Gray, fontSize = 14.sp)
+                    }
+                } else {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 400.dp)
+                    ) {
+                        items(uiState.availableReleases) { release ->
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (release.isDebridCached) Color(0xFF1E281E) else Color(0xFF1C1C1C)
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Surface(
+                                            color = if (release.isDebridCached) Color(0xFF4CAF50) else Color(0xFFE50914),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                text = if (release.isDebridCached) "⚡ INSTANT STREAM" else release.quality,
+                                                color = Color.White,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = "👤 ${release.seeds} seeds",
+                                                color = if (release.seeds > 5) Color(0xFF4CAF50) else Color.Gray,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Text(
+                                                text = "💾 ${release.size}",
+                                                color = Color.LightGray,
+                                                fontSize = 11.sp
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(6.dp))
+
+                                    Text(
+                                        text = release.title,
+                                        color = Color.White,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+
+                                    Spacer(modifier = Modifier.height(4.dp))
+
+                                    Text(
+                                        text = "Source: ${release.indexer}",
+                                        color = Color.Gray,
+                                        fontSize = 11.sp
+                                    )
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        val directUrl = release.directStreamUrl
+                                        val magnet = release.magnetUrl
+                                        if (directUrl != null) {
+                                            Button(
+                                                onClick = {
+                                                    viewModel.closeReleaseSheet()
+                                                    onNavigateToPlayer(directUrl)
+                                                },
+                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
+                                                modifier = Modifier.weight(1f)
+                                            ) {
+                                                Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text("Play Stream", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        } else if (magnet != null) {
+                                            Column(modifier = Modifier.fillMaxWidth()) {
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                ) {
+                                                    // Stream via TorBox/Debrid Cloud Engine (Paid API)
+                                                    Button(
+                                                        onClick = {
+                                                            viewModel.playRelease(release) { url -> onNavigateToPlayer(url) }
+                                                        },
+                                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF333333)),
+                                                        modifier = Modifier.weight(1f)
+                                                    ) {
+                                                        Icon(Icons.Default.Bolt, contentDescription = null, modifier = Modifier.size(15.dp))
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        Text("Debrid (Paid API)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                    }
+
+                                                    // Open in VLC / external torrent app
+                                                    Button(
+                                                        onClick = {
+                                                            try {
+                                                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(magnet)).apply {
+                                                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                                }
+                                                                context.startActivity(intent)
+                                                            } catch (e: Exception) {
+                                                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                                                clipboard.setPrimaryClip(ClipData.newPlainText("Magnet", magnet))
+                                                                Toast.makeText(context, "Magnet copied! Paste in VLC or torrent app.", Toast.LENGTH_LONG).show()
+                                                            }
+                                                        },
+                                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E2E2E)),
+                                                        modifier = Modifier.weight(1f)
+                                                    ) {
+                                                        Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        Text("Open in VLC / App", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                    }
+
+                                                    // Copy magnet
+                                                    OutlinedButton(
+                                                        onClick = {
+                                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                                            clipboard.setPrimaryClip(ClipData.newPlainText("Magnet", magnet))
+                                                            Toast.makeText(context, "Magnet copied!", Toast.LENGTH_SHORT).show()
+                                                        },
+                                                        border = BorderStroke(1.dp, Color.Gray),
+                                                        modifier = Modifier.width(80.dp)
+                                                    ) {
+                                                        Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(13.dp), tint = Color.LightGray)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+        }
     }
 }
 

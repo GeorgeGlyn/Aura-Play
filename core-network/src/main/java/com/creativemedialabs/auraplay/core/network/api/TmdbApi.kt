@@ -60,5 +60,13 @@ interface TmdbApi {
         @Query("api_key") apiKey: String,
         @Query("language") language: String = "en-US"
     ): com.creativemedialabs.auraplay.core.network.model.TmdbSeasonDetailResponse
+
+    @GET("{media_type}/{media_id}/external_ids")
+    suspend fun getExternalIds(
+        @Path("media_type") mediaType: String,
+        @Path("media_id") mediaId: Int,
+        @Query("api_key") apiKey: String
+    ): com.creativemedialabs.auraplay.core.network.model.ExternalIdsResponse
 }
+
 

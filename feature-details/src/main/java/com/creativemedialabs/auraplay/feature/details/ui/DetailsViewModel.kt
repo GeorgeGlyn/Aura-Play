@@ -17,6 +17,7 @@ import com.creativemedialabs.auraplay.core.network.model.MediaDetailResponse
 import com.creativemedialabs.auraplay.core.network.model.TmdbEpisodeItem
 import com.creativemedialabs.auraplay.core.network.model.TmdbMediaItem
 import com.creativemedialabs.auraplay.core.network.repository.TmdbRepository
+import com.creativemedialabs.auraplay.core.network.resolver.MediaRelease
 import com.creativemedialabs.auraplay.core.network.resolver.MediaResolver
 import com.creativemedialabs.auraplay.core.network.resolver.ResolvedStream
 import com.creativemedialabs.auraplay.feature.downloads.worker.MediaDownloadWorker
@@ -41,7 +42,11 @@ data class DetailsUiState(
     val errorMessage: String? = null,
     val selectedSeason: Int = 1,
     val seasonEpisodes: List<TmdbEpisodeItem> = emptyList(),
-    val isTvShow: Boolean = false
+    val isTvShow: Boolean = false,
+    val availableReleases: List<MediaRelease> = emptyList(),
+    val isSearchingReleases: Boolean = false,
+    val showReleaseSheet: Boolean = false,
+    val releaseSearchTitle: String = ""
 )
 
 @HiltViewModel
@@ -235,10 +240,9 @@ class DetailsViewModel @Inject constructor(
                     onStreamReady(stream.videoUrl)
                 },
                 onFailure = { error ->
-                    _uiState.value = _uiState.value.copy(
-                        isResolvingStream = false,
-                        errorMessage = "Could not resolve stream: ${error.message}"
-                    )
+                    _uiState.value = _uiState.value.copy(isResolvingStream = false)
+                    // Automatically open release selector sheet so user can choose release or open in torrent player
+                    searchReleasesForEpisode(episode)
                 }
             )
         }
@@ -334,13 +338,112 @@ class DetailsViewModel @Inject constructor(
                     onStreamReady(stream.videoUrl)
                 },
                 onFailure = { error ->
+                    _uiState.value = _uiState.value.copy(isResolvingStream = false)
+                    // Automatically open release selector sheet so user can choose release or open in torrent player
+                    searchReleasesForMedia()
+                }
+            )
+        }
+    }
+
+    fun searchReleasesForMedia() {
+        val detail = _uiState.value.mediaDetail ?: return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                isSearchingReleases = true,
+                showReleaseSheet = true,
+                releaseSearchTitle = detail.title ?: detail.name ?: "Releases",
+                availableReleases = emptyList()
+            )
+            val isTv = _uiState.value.isTvShow
+            val mediaType = if (isTv) "tv" else "movie"
+            val result = mediaResolver.searchReleases(
+                tmdbId = mediaId,
+                mediaType = mediaType,
+                seasonNumber = if (isTv) _uiState.value.selectedSeason else null,
+                episodeNumber = if (isTv) 1 else null
+            )
+            result.fold(
+                onSuccess = { releases ->
                     _uiState.value = _uiState.value.copy(
-                        isResolvingStream = false,
-                        errorMessage = "Could not resolve stream: ${error.message}"
+                        isSearchingReleases = false,
+                        availableReleases = releases
+                    )
+                },
+                onFailure = { error ->
+                    _uiState.value = _uiState.value.copy(
+                        isSearchingReleases = false,
+                        errorMessage = "No releases found on indexers: ${error.message}"
                     )
                 }
             )
         }
+    }
+
+    fun searchReleasesForEpisode(episode: TmdbEpisodeItem) {
+        val detail = _uiState.value.mediaDetail ?: return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                isSearchingReleases = true,
+                showReleaseSheet = true,
+                releaseSearchTitle = "${detail.name ?: "Series"} - S${episode.seasonNumber}E${episode.episodeNumber}: ${episode.name}",
+                availableReleases = emptyList()
+            )
+            val result = mediaResolver.searchReleases(
+                tmdbId = mediaId,
+                mediaType = "tv",
+                seasonNumber = episode.seasonNumber,
+                episodeNumber = episode.episodeNumber
+            )
+            result.fold(
+                onSuccess = { releases ->
+                    _uiState.value = _uiState.value.copy(
+                        isSearchingReleases = false,
+                        availableReleases = releases
+                    )
+                },
+                onFailure = { error ->
+                    _uiState.value = _uiState.value.copy(
+                        isSearchingReleases = false,
+                        errorMessage = "No releases found for episode: ${error.message}"
+                    )
+                }
+            )
+        }
+    }
+
+    fun playRelease(release: MediaRelease, onStreamReady: (String) -> Unit) {
+        val directUrl = release.directStreamUrl
+        if (directUrl != null) {
+            closeReleaseSheet()
+            onStreamReady(directUrl)
+            return
+        }
+
+        val magnet = release.magnetUrl
+        if (magnet != null) {
+            viewModelScope.launch {
+                _uiState.value = _uiState.value.copy(isResolvingStream = true)
+                val streamResult = mediaResolver.resolveMagnet(magnet)
+                streamResult.fold(
+                    onSuccess = { streamUrl ->
+                        _uiState.value = _uiState.value.copy(isResolvingStream = false)
+                        closeReleaseSheet()
+                        onStreamReady(streamUrl)
+                    },
+                    onFailure = { error ->
+                        _uiState.value = _uiState.value.copy(
+                            isResolvingStream = false,
+                            errorMessage = "TorBox stream error: ${error.message}"
+                        )
+                    }
+                )
+            }
+        }
+    }
+
+    fun closeReleaseSheet() {
+        _uiState.value = _uiState.value.copy(showReleaseSheet = false)
     }
 
     override fun onCleared() {
