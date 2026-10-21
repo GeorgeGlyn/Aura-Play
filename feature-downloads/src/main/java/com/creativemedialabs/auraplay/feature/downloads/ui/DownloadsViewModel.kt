@@ -81,4 +81,23 @@ class DownloadsViewModel @Inject constructor(
     fun triggerSync(context: Context) {
         SeriesMonitorWorker.triggerImmediateSync(context)
     }
+
+    fun retryDownload(context: Context, download: DownloadEntity) {
+        viewModelScope.launch {
+            downloadDao.updateProgress(download.mediaId, "QUEUED", 0)
+            val inputData = androidx.work.Data.Builder()
+                .putInt(com.creativemedialabs.auraplay.feature.downloads.worker.MediaDownloadWorker.KEY_MEDIA_ID, download.mediaId)
+                .putString(com.creativemedialabs.auraplay.feature.downloads.worker.MediaDownloadWorker.KEY_VIDEO_URL, "RESOLVE")
+                .putString(com.creativemedialabs.auraplay.feature.downloads.worker.MediaDownloadWorker.KEY_TITLE, download.title)
+                .putString(com.creativemedialabs.auraplay.feature.downloads.worker.MediaDownloadWorker.KEY_POSTER_PATH, download.posterPath)
+                .putString(com.creativemedialabs.auraplay.feature.downloads.worker.MediaDownloadWorker.KEY_MEDIA_TYPE, download.mediaType)
+                .build()
+
+            val downloadWork = androidx.work.OneTimeWorkRequestBuilder<com.creativemedialabs.auraplay.feature.downloads.worker.MediaDownloadWorker>()
+                .setInputData(inputData)
+                .build()
+
+            androidx.work.WorkManager.getInstance(context).enqueue(downloadWork)
+        }
+    }
 }

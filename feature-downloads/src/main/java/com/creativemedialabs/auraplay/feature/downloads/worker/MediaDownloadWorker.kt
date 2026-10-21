@@ -27,7 +27,8 @@ class MediaDownloadWorker @AssistedInject constructor(
     @Assisted params: WorkerParameters,
     private val downloadDao: DownloadDao,
     private val episodeDao: EpisodeDao,
-    private val torrentEngine: com.creativemedialabs.auraplay.core.network.torrent.TorrentEngine
+    private val torrentEngine: com.creativemedialabs.auraplay.core.network.torrent.TorrentEngine,
+    private val mediaResolver: com.creativemedialabs.auraplay.core.network.resolver.MediaResolver
 ) : CoroutineWorker(context, params) {
 
     companion object {
@@ -59,7 +60,7 @@ class MediaDownloadWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val mediaId = inputData.getInt(KEY_MEDIA_ID, -1)
-        val videoUrl = inputData.getString(KEY_VIDEO_URL) ?: return@withContext Result.failure()
+        var videoUrl = inputData.getString(KEY_VIDEO_URL) ?: "RESOLVE"
         val title = inputData.getString(KEY_TITLE) ?: "Unknown"
         val posterPath = inputData.getString(KEY_POSTER_PATH)
         val mediaType = inputData.getString(KEY_MEDIA_TYPE) ?: "movie"
@@ -70,15 +71,32 @@ class MediaDownloadWorker @AssistedInject constructor(
 
         if (mediaId == -1) return@withContext Result.failure()
 
-        // Reject web embeds immediately; web embeds are HTML players, not downloadable media
-        if (isWebEmbedUrl(videoUrl)) {
-            Log.e(TAG, "Cannot download web embed URL directly: $videoUrl")
-            markFailed(mediaId, mediaType, title, posterPath, seriesId, seasonNumber, episodeNumber)
-            return@withContext Result.failure()
-        }
+        var inputReferer = inputData.getString(KEY_REFERER)
+        var inputUserAgent = inputData.getString(KEY_USER_AGENT)
 
-        val inputReferer = inputData.getString(KEY_REFERER)
-        val inputUserAgent = inputData.getString(KEY_USER_AGENT)
+        // If videoUrl is not resolved or is a raw web embed, resolve it with MediaResolver in this persistent worker
+        if (videoUrl.isBlank() || videoUrl.equals("RESOLVE", ignoreCase = true) || isWebEmbedUrl(videoUrl)) {
+            Log.d(TAG, "Resolving download stream in persistent worker for $title (ID: $mediaId, seriesId: $seriesId)")
+            val tmdbId = if (seriesId > 0) seriesId else mediaId
+            val resolveResult = mediaResolver.resolveDownloadStream(
+                tmdbId = tmdbId,
+                mediaType = mediaType,
+                seasonNumber = if (seasonNumber > 0) seasonNumber else null,
+                episodeNumber = if (episodeNumber > 0) episodeNumber else null
+            )
+            if (resolveResult.isSuccess) {
+                val stream = resolveResult.getOrThrow()
+                videoUrl = stream.videoUrl
+                if (inputReferer.isNullOrBlank()) inputReferer = stream.headers["Referer"]
+                if (inputUserAgent.isNullOrBlank()) inputUserAgent = stream.headers["User-Agent"]
+                Log.d(TAG, "Worker resolved stream successfully: $videoUrl")
+            } else {
+                val err = resolveResult.exceptionOrNull()?.message ?: "Failed to resolve stream"
+                Log.e(TAG, "Worker failed to resolve stream: $err")
+                markFailed(mediaId, mediaType, title, posterPath, seriesId, seasonNumber, episodeNumber)
+                return@withContext Result.failure()
+            }
+        }
         val referer = when {
             !inputReferer.isNullOrBlank() -> inputReferer
             videoUrl.contains("net52") || videoUrl.contains("nm-cdn") || videoUrl.contains("freecdn") || videoUrl.contains("imgcdn") -> "https://net52.cc"

@@ -243,59 +243,28 @@ class DetailsViewModel @Inject constructor(
                 progress = 0
             )
 
-            _uiState.value = _uiState.value.copy(isResolvingStream = true, errorMessage = null)
-            mediaResolver.resolveDownloadStream(
-                tmdbId = mediaId,
-                mediaType = "tv",
-                seasonNumber = episode.seasonNumber,
-                episodeNumber = episode.episodeNumber
-            ).fold(
-                onSuccess = { stream ->
-                    _uiState.value = _uiState.value.copy(
-                        isResolvingStream = false,
-                        castSuccessMessage = "Episode S${episode.seasonNumber}E${episode.episodeNumber} download queued!"
-                    )
-                    val inputData = Data.Builder()
-                        .putInt(MediaDownloadWorker.KEY_MEDIA_ID, uniqueEpId)
-                        .putString(MediaDownloadWorker.KEY_VIDEO_URL, stream.videoUrl)
-                        .putString(MediaDownloadWorker.KEY_TITLE, detail.name ?: detail.title ?: "TV Show")
-                        .putString(MediaDownloadWorker.KEY_POSTER_PATH, detail.posterPath)
-                        .putString(MediaDownloadWorker.KEY_MEDIA_TYPE, "tv")
-                        .putInt(MediaDownloadWorker.KEY_SERIES_ID, mediaId)
-                        .putInt(MediaDownloadWorker.KEY_SEASON_NUMBER, episode.seasonNumber)
-                        .putInt(MediaDownloadWorker.KEY_EPISODE_NUMBER, episode.episodeNumber)
-                        .putString(MediaDownloadWorker.KEY_EPISODE_NAME, episode.name)
-                        .apply {
-                            stream.headers["Referer"]?.let { putString(MediaDownloadWorker.KEY_REFERER, it) }
-                            stream.headers["User-Agent"]?.let { putString(MediaDownloadWorker.KEY_USER_AGENT, it) }
-                        }
-                        .build()
+            // Enqueue persistent WorkManager job immediately with RESOLVE command - will not cancel if screen closes!
+            val inputData = Data.Builder()
+                .putInt(MediaDownloadWorker.KEY_MEDIA_ID, uniqueEpId)
+                .putString(MediaDownloadWorker.KEY_VIDEO_URL, "RESOLVE")
+                .putString(MediaDownloadWorker.KEY_TITLE, detail.name ?: detail.title ?: "TV Show")
+                .putString(MediaDownloadWorker.KEY_POSTER_PATH, detail.posterPath)
+                .putString(MediaDownloadWorker.KEY_MEDIA_TYPE, "tv")
+                .putInt(MediaDownloadWorker.KEY_SERIES_ID, mediaId)
+                .putInt(MediaDownloadWorker.KEY_SEASON_NUMBER, episode.seasonNumber)
+                .putInt(MediaDownloadWorker.KEY_EPISODE_NUMBER, episode.episodeNumber)
+                .putString(MediaDownloadWorker.KEY_EPISODE_NAME, episode.name)
+                .build()
 
-                    val downloadWork = OneTimeWorkRequestBuilder<MediaDownloadWorker>()
-                        .setInputData(inputData)
-                        .build()
+            val downloadWork = OneTimeWorkRequestBuilder<MediaDownloadWorker>()
+                .setInputData(inputData)
+                .build()
 
-                    WorkManager.getInstance(context).enqueue(downloadWork)
-                },
-                onFailure = { error ->
-                    _uiState.value = _uiState.value.copy(
-                        isResolvingStream = false,
-                        errorMessage = "Download error: ${error.message}"
-                    )
-                    downloadDao.insertOrUpdate(
-                        initialDownload.copy(
-                            downloadStatus = "FAILED: ${error.message ?: "No stream available"}"
-                        )
-                    )
-                    episodeDao.updateDownloadStatus(
-                        seriesId = mediaId,
-                        seasonNumber = episode.seasonNumber,
-                        episodeNumber = episode.episodeNumber,
-                        status = "MISSING",
-                        localPath = null,
-                        progress = 0
-                    )
-                }
+            WorkManager.getInstance(context).enqueue(downloadWork)
+
+            _uiState.value = _uiState.value.copy(
+                isResolvingStream = false,
+                castSuccessMessage = "Episode S${episode.seasonNumber}E${episode.episodeNumber} download queued!"
             )
         }
     }
@@ -346,52 +315,31 @@ class DetailsViewModel @Inject constructor(
             )
             downloadDao.insertOrUpdate(initialDownload)
 
-            _uiState.value = _uiState.value.copy(isResolvingStream = true, errorMessage = null)
-            mediaResolver.resolveDownloadStream(
-                tmdbId = mediaId,
-                mediaType = targetType,
-                seasonNumber = seasonNum,
-                episodeNumber = episodeNum
-            ).fold(
-                onSuccess = { stream ->
-                    _uiState.value = _uiState.value.copy(
-                        isResolvingStream = false,
-                        castSuccessMessage = "Download queued in background!"
-                    )
-                    val inputData = Data.Builder()
-                        .putInt(MediaDownloadWorker.KEY_MEDIA_ID, mediaId)
-                        .putString(MediaDownloadWorker.KEY_VIDEO_URL, stream.videoUrl)
-                        .putString(MediaDownloadWorker.KEY_TITLE, detail.displayTitle)
-                        .putString(MediaDownloadWorker.KEY_POSTER_PATH, detail.posterPath)
-                        .putString(MediaDownloadWorker.KEY_MEDIA_TYPE, targetType)
-                        .apply {
-                            if (isTv && seasonNum != null && episodeNum != null) {
-                                putInt(MediaDownloadWorker.KEY_SERIES_ID, mediaId)
-                                putInt(MediaDownloadWorker.KEY_SEASON_NUMBER, seasonNum)
-                                putInt(MediaDownloadWorker.KEY_EPISODE_NUMBER, episodeNum)
-                            }
-                            stream.headers["Referer"]?.let { putString(MediaDownloadWorker.KEY_REFERER, it) }
-                            stream.headers["User-Agent"]?.let { putString(MediaDownloadWorker.KEY_USER_AGENT, it) }
-                        }
-                        .build()
-
-                    val downloadWork = OneTimeWorkRequestBuilder<MediaDownloadWorker>()
-                        .setInputData(inputData)
-                        .build()
-
-                    WorkManager.getInstance(context).enqueue(downloadWork)
-                },
-                onFailure = { error ->
-                    _uiState.value = _uiState.value.copy(
-                        isResolvingStream = false,
-                        errorMessage = "Download error: ${error.message}"
-                    )
-                    downloadDao.insertOrUpdate(
-                        initialDownload.copy(
-                            downloadStatus = "FAILED: ${error.message ?: "No stream available"}"
-                        )
-                    )
+            // Enqueue persistent WorkManager job immediately with RESOLVE command
+            val inputData = Data.Builder()
+                .putInt(MediaDownloadWorker.KEY_MEDIA_ID, mediaId)
+                .putString(MediaDownloadWorker.KEY_VIDEO_URL, "RESOLVE")
+                .putString(MediaDownloadWorker.KEY_TITLE, detail.displayTitle)
+                .putString(MediaDownloadWorker.KEY_POSTER_PATH, detail.posterPath)
+                .putString(MediaDownloadWorker.KEY_MEDIA_TYPE, targetType)
+                .apply {
+                    if (isTv && seasonNum != null && episodeNum != null) {
+                        putInt(MediaDownloadWorker.KEY_SERIES_ID, mediaId)
+                        putInt(MediaDownloadWorker.KEY_SEASON_NUMBER, seasonNum)
+                        putInt(MediaDownloadWorker.KEY_EPISODE_NUMBER, episodeNum)
+                    }
                 }
+                .build()
+
+            val downloadWork = OneTimeWorkRequestBuilder<MediaDownloadWorker>()
+                .setInputData(inputData)
+                .build()
+
+            WorkManager.getInstance(context).enqueue(downloadWork)
+
+            _uiState.value = _uiState.value.copy(
+                isResolvingStream = false,
+                castSuccessMessage = "Download queued in background!"
             )
         }
     }
