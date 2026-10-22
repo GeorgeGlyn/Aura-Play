@@ -1,6 +1,7 @@
 package com.creativemedialabs.auraplay.feature.player.ui
 
 import android.app.Activity
+import android.app.PictureInPictureParams
 import android.content.Context
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
@@ -10,6 +11,10 @@ import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.util.Log
+import android.util.Rational
+import androidx.activity.ComponentActivity
+import androidx.core.app.PictureInPictureModeChangedInfo
+import androidx.core.util.Consumer
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.WebChromeClient
@@ -151,6 +156,52 @@ fun WebStreamPlayer(
     var customViewCallback by remember { mutableStateOf<WebChromeClient.CustomViewCallback?>(null) }
     var sniffedStreamUrl by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
+    val activity = context as? Activity
+    var isInPipMode by remember {
+        mutableStateOf(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && activity?.isInPictureInPictureMode == true) true else false
+        )
+    }
+
+    DisposableEffect(activity) {
+        val componentActivity = activity as? ComponentActivity
+        val listener = Consumer<PictureInPictureModeChangedInfo> { info ->
+            isInPipMode = info.isInPictureInPictureMode
+        }
+        componentActivity?.addOnPictureInPictureModeChangedListener(listener)
+        onDispose {
+            componentActivity?.removeOnPictureInPictureModeChangedListener(listener)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && activity != null) {
+            try {
+                val params = PictureInPictureParams.Builder()
+                    .setAspectRatio(Rational(16, 9))
+                    .setAutoEnterEnabled(true)
+                    .build()
+                activity.setPictureInPictureParams(params)
+            } catch (e: Exception) {
+                // ignore
+            }
+        }
+    }
+
+    val onEnterPip: () -> Unit = {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && activity != null) {
+            try {
+                val params = PictureInPictureParams.Builder()
+                    .setAspectRatio(Rational(16, 9))
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    params.setAutoEnterEnabled(true)
+                }
+                activity.enterPictureInPictureMode(params.build())
+            } catch (e: Exception) {
+                Log.e("WebStreamPlayer", "Failed to enter PiP: ${e.message}")
+            }
+        }
+    }
 
     // Auto-hide top controls after 4 seconds
     LaunchedEffect(showOverlay) {
@@ -334,7 +385,7 @@ fun WebStreamPlayer(
 
         // Top Bar Overlay
         AnimatedVisibility(
-            visible = showOverlay,
+            visible = showOverlay && !isInPipMode,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.TopCenter)
@@ -421,6 +472,18 @@ fun WebStreamPlayer(
                 Spacer(modifier = Modifier.width(8.dp))
 
                 IconButton(
+                    onClick = onEnterPip,
+                    modifier = Modifier.background(Color(0x66000000), CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PictureInPictureAlt,
+                        contentDescription = "PIP Mode",
+                        tint = Color.White
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+
+                IconButton(
                     onClick = { webViewRef?.reload() },
                     modifier = Modifier.background(Color(0x66000000), CircleShape)
                 ) {
@@ -434,7 +497,7 @@ fun WebStreamPlayer(
         }
 
         // Tap area at top to restore controls when hidden
-        if (!showOverlay) {
+        if (!showOverlay && !isInPipMode) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -503,6 +566,66 @@ fun ExoPlayerStreamPlayer(
     var playbackSpeed by remember { mutableFloatStateOf(1.0f) }
     var isFillScreen by remember { mutableStateOf(false) }
 
+    var isInPipMode by remember {
+        mutableStateOf(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && activity?.isInPictureInPictureMode == true) true else false
+        )
+    }
+
+    DisposableEffect(activity) {
+        val componentActivity = activity as? ComponentActivity
+        val listener = Consumer<PictureInPictureModeChangedInfo> { info ->
+            isInPipMode = info.isInPictureInPictureMode
+        }
+        componentActivity?.addOnPictureInPictureModeChangedListener(listener)
+        onDispose {
+            componentActivity?.removeOnPictureInPictureModeChangedListener(listener)
+        }
+    }
+
+    LaunchedEffect(isPlaying, exoPlayer.videoSize) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && activity != null) {
+            try {
+                val rational = if (exoPlayer.videoSize.width > 0 && exoPlayer.videoSize.height > 0) {
+                    val ratio = exoPlayer.videoSize.width.toFloat() / exoPlayer.videoSize.height.toFloat()
+                    if (ratio in 0.42f..2.38f) {
+                        Rational(exoPlayer.videoSize.width, exoPlayer.videoSize.height)
+                    } else Rational(16, 9)
+                } else Rational(16, 9)
+
+                val params = PictureInPictureParams.Builder()
+                    .setAspectRatio(rational)
+                    .setAutoEnterEnabled(isPlaying)
+                    .build()
+                activity.setPictureInPictureParams(params)
+            } catch (e: Exception) {
+                // ignore
+            }
+        }
+    }
+
+    val onEnterPip: () -> Unit = {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && activity != null) {
+            try {
+                val rational = if (exoPlayer.videoSize.width > 0 && exoPlayer.videoSize.height > 0) {
+                    val ratio = exoPlayer.videoSize.width.toFloat() / exoPlayer.videoSize.height.toFloat()
+                    if (ratio in 0.42f..2.38f) {
+                        Rational(exoPlayer.videoSize.width, exoPlayer.videoSize.height)
+                    } else Rational(16, 9)
+                } else Rational(16, 9)
+
+                val params = PictureInPictureParams.Builder()
+                    .setAspectRatio(rational)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    params.setAutoEnterEnabled(isPlaying)
+                }
+                activity.enterPictureInPictureMode(params.build())
+            } catch (e: Exception) {
+                Log.e("PlayerScreen", "Failed to enter PiP: ${e.message}")
+            }
+        }
+    }
+
     // Gesture indicator values
     var gestureIndicatorText by remember { mutableStateOf<String?>(null) }
     var showTrackDialog by remember { mutableStateOf(false) }
@@ -566,54 +689,59 @@ fun ExoPlayerStreamPlayer(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .pointerInput(isScreenLocked) {
-                if (!isScreenLocked) {
-                    detectTapGestures(
-                        onTap = { showControls = !showControls },
-                        onDoubleTap = { offset ->
-                            val maxDur = if (exoPlayer.duration > 0) exoPlayer.duration else if (totalDuration > 1000L) totalDuration else Long.MAX_VALUE
-                            if (offset.x < size.width / 2) {
-                                val target = (exoPlayer.currentPosition - 10_000).coerceAtLeast(0L)
-                                exoPlayer.seekTo(target)
-                                currentPosition = target
-                                gestureIndicatorText = "-10s Rewind"
+            .then(
+                if (!isInPipMode) {
+                    Modifier
+                        .pointerInput(isScreenLocked) {
+                            if (!isScreenLocked) {
+                                detectTapGestures(
+                                    onTap = { showControls = !showControls },
+                                    onDoubleTap = { offset ->
+                                        val maxDur = if (exoPlayer.duration > 0) exoPlayer.duration else if (totalDuration > 1000L) totalDuration else Long.MAX_VALUE
+                                        if (offset.x < size.width / 2) {
+                                            val target = (exoPlayer.currentPosition - 10_000).coerceAtLeast(0L)
+                                            exoPlayer.seekTo(target)
+                                            currentPosition = target
+                                            gestureIndicatorText = "-10s Rewind"
+                                        } else {
+                                            val target = (exoPlayer.currentPosition + 10_000).coerceAtMost(maxDur)
+                                            exoPlayer.seekTo(target)
+                                            currentPosition = target
+                                            gestureIndicatorText = "+10s Fast Forward"
+                                        }
+                                        showControls = true
+                                    }
+                                )
                             } else {
-                                val target = (exoPlayer.currentPosition + 10_000).coerceAtMost(maxDur)
-                                exoPlayer.seekTo(target)
-                                currentPosition = target
-                                gestureIndicatorText = "+10s Fast Forward"
+                                detectTapGestures(onTap = { showControls = !showControls })
                             }
-                            showControls = true
                         }
-                    )
-                } else {
-                    detectTapGestures(onTap = { showControls = !showControls })
-                }
-            }
-            .pointerInput(isScreenLocked) {
-                if (!isScreenLocked) {
-                    detectDragGestures { change, dragAmount ->
-                        val isLeftSide = change.position.x < size.width / 2
-                        val delta = -dragAmount.y
+                        .pointerInput(isScreenLocked) {
+                            if (!isScreenLocked) {
+                                detectDragGestures { change, dragAmount ->
+                                    val isLeftSide = change.position.x < size.width / 2
+                                    val delta = -dragAmount.y
 
-                        if (isLeftSide && activity != null) {
-                            val lp = activity.window.attributes
-                            val currentBrightness = if (lp.screenBrightness < 0) 0.5f else lp.screenBrightness
-                            val newBrightness = (currentBrightness + (delta / size.height)).coerceIn(0.05f, 1.0f)
-                            lp.screenBrightness = newBrightness
-                            activity.window.attributes = lp
-                            gestureIndicatorText = "Brightness: ${(newBrightness * 100).toInt()}%"
-                        } else {
-                            val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-                            val curVol = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-                            val step = if (delta > 0) 1 else -1
-                            val newVol = (curVol + step).coerceIn(0, maxVol)
-                            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVol, 0)
-                            gestureIndicatorText = "Volume: ${(newVol * 100 / maxVol)}%"
+                                    if (isLeftSide && activity != null) {
+                                        val lp = activity.window.attributes
+                                        val currentBrightness = if (lp.screenBrightness < 0) 0.5f else lp.screenBrightness
+                                        val newBrightness = (currentBrightness + (delta / size.height)).coerceIn(0.05f, 1.0f)
+                                        lp.screenBrightness = newBrightness
+                                        activity.window.attributes = lp
+                                        gestureIndicatorText = "Brightness: ${(newBrightness * 100).toInt()}%"
+                                    } else {
+                                        val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                                        val curVol = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                                        val step = if (delta > 0) 1 else -1
+                                        val newVol = (curVol + step).coerceIn(0, maxVol)
+                                        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVol, 0)
+                                        gestureIndicatorText = "Volume: ${(newVol * 100 / maxVol)}%"
+                                    }
+                                }
+                            }
                         }
-                    }
-                }
-            }
+                } else Modifier
+            )
     ) {
         // ExoPlayer Surface
         AndroidView(
@@ -648,102 +776,105 @@ fun ExoPlayerStreamPlayer(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Gesture HUD Overlay
-        gestureIndicatorText?.let { text ->
-            Surface(
-                modifier = Modifier.align(Alignment.Center),
-                shape = RoundedCornerShape(12.dp),
-                color = Color(0xCC000000)
-            ) {
-                Text(
-                    text = text,
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 14.dp)
+        if (!isInPipMode) {
+            // Gesture HUD Overlay
+            gestureIndicatorText?.let { text ->
+                Surface(
+                    modifier = Modifier.align(Alignment.Center),
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xCC000000)
+                ) {
+                    Text(
+                        text = text,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 14.dp)
+                    )
+                }
+            }
+
+            // Buffering Indicator
+            if (bufferingState) {
+                CircularProgressIndicator(
+                    modifier = Modifier.align(Alignment.Center),
+                    color = Color(0xFFE50914)
                 )
             }
-        }
 
-        // Buffering Indicator
-        if (bufferingState) {
-            CircularProgressIndicator(
-                modifier = Modifier.align(Alignment.Center),
-                color = Color(0xFFE50914)
-            )
-        }
-
-        // Screen Lock Indicator when Locked
-        if (isScreenLocked && showControls) {
-            IconButton(
-                onClick = { isScreenLocked = false },
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .statusBarsPadding()
-                    .padding(20.dp)
-                    .background(Color(0x99000000), CircleShape)
-            ) {
-                Icon(Icons.Default.Lock, contentDescription = "Unlock", tint = Color(0xFFE50914))
+            // Screen Lock Indicator when Locked
+            if (isScreenLocked && showControls) {
+                IconButton(
+                    onClick = { isScreenLocked = false },
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .statusBarsPadding()
+                        .padding(20.dp)
+                        .background(Color(0x99000000), CircleShape)
+                ) {
+                    Icon(Icons.Default.Lock, contentDescription = "Unlock", tint = Color(0xFFE50914))
+                }
             }
-        }
 
-        // Full Netflix Overlay Controls (when not locked)
-        if (showControls && !isScreenLocked) {
-            val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
-            PlayerControlsOverlay(
-                isPlaying = isPlaying,
-                currentPosition = currentPosition,
-                totalDuration = totalDuration,
-                playbackSpeed = playbackSpeed,
-                isLandscape = isLandscape,
-                isFillScreen = isFillScreen,
-                onBack = {
-                    exoPlayer.release()
-                    onBack()
-                },
-                onPlayPause = {
-                    if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
-                    isPlaying = !isPlaying
-                },
-                onSeekRelative = { deltaMs ->
-                    val maxDur = if (exoPlayer.duration > 0) exoPlayer.duration else if (totalDuration > 1000L) totalDuration else Long.MAX_VALUE
-                    val target = (exoPlayer.currentPosition + deltaMs).coerceIn(0L, maxDur)
-                    exoPlayer.seekTo(target)
-                    currentPosition = target
-                },
-                onLockScreen = { isScreenLocked = true },
-                onToggleSpeed = {
-                    val nextSpeed = when (playbackSpeed) {
-                        1.0f -> 1.25f
-                        1.25f -> 1.5f
-                        1.5f -> 0.75f
-                        else -> 1.0f
-                    }
-                    playbackSpeed = nextSpeed
-                    exoPlayer.setPlaybackSpeed(nextSpeed)
-                    gestureIndicatorText = "Speed: ${nextSpeed}x"
-                },
-                onToggleOrientation = {
-                    if (isLandscape) {
-                        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                    } else {
-                        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                    }
-                },
-                onToggleFillScreen = {
-                    isFillScreen = !isFillScreen
-                    gestureIndicatorText = if (isFillScreen) "Screen Fill (Zoom)" else "Original Ratio (Fit)"
-                },
-                onTracksClicked = { showTrackDialog = true },
-                onSeek = { fraction ->
-                    val durToUse = if (exoPlayer.duration > 0) exoPlayer.duration else if (totalDuration > 1000L) totalDuration else 0L
-                    if (durToUse > 0) {
-                        val target = (fraction * durToUse).toLong()
+            // Full Netflix Overlay Controls (when not locked)
+            if (showControls && !isScreenLocked) {
+                val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+                PlayerControlsOverlay(
+                    isPlaying = isPlaying,
+                    currentPosition = currentPosition,
+                    totalDuration = totalDuration,
+                    playbackSpeed = playbackSpeed,
+                    isLandscape = isLandscape,
+                    isFillScreen = isFillScreen,
+                    onBack = {
+                        exoPlayer.release()
+                        onBack()
+                    },
+                    onPlayPause = {
+                        if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
+                        isPlaying = !isPlaying
+                    },
+                    onSeekRelative = { deltaMs ->
+                        val maxDur = if (exoPlayer.duration > 0) exoPlayer.duration else if (totalDuration > 1000L) totalDuration else Long.MAX_VALUE
+                        val target = (exoPlayer.currentPosition + deltaMs).coerceIn(0L, maxDur)
                         exoPlayer.seekTo(target)
                         currentPosition = target
+                    },
+                    onLockScreen = { isScreenLocked = true },
+                    onToggleSpeed = {
+                        val nextSpeed = when (playbackSpeed) {
+                            1.0f -> 1.25f
+                            1.25f -> 1.5f
+                            1.5f -> 0.75f
+                            else -> 1.0f
+                        }
+                        playbackSpeed = nextSpeed
+                        exoPlayer.setPlaybackSpeed(nextSpeed)
+                        gestureIndicatorText = "Speed: ${nextSpeed}x"
+                    },
+                    onToggleOrientation = {
+                        if (isLandscape) {
+                            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                        } else {
+                            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                        }
+                    },
+                    onToggleFillScreen = {
+                        isFillScreen = !isFillScreen
+                        gestureIndicatorText = if (isFillScreen) "Screen Fill (Zoom)" else "Original Ratio (Fit)"
+                    },
+                    onTracksClicked = { showTrackDialog = true },
+                    onEnterPip = onEnterPip,
+                    onSeek = { fraction ->
+                        val durToUse = if (exoPlayer.duration > 0) exoPlayer.duration else if (totalDuration > 1000L) totalDuration else 0L
+                        if (durToUse > 0) {
+                            val target = (fraction * durToUse).toLong()
+                            exoPlayer.seekTo(target)
+                            currentPosition = target
+                        }
                     }
-                }
-            )
+                )
+            }
         }
     }
 
@@ -771,6 +902,7 @@ private fun BoxScope.PlayerControlsOverlay(
     onToggleOrientation: () -> Unit,
     onToggleFillScreen: () -> Unit,
     onTracksClicked: () -> Unit,
+    onEnterPip: () -> Unit,
     onSeek: (Float) -> Unit
 ) {
     // Dark Scrim
@@ -806,6 +938,13 @@ private fun BoxScope.PlayerControlsOverlay(
                 Icon(
                     imageVector = if (isLandscape) Icons.Default.ScreenLockPortrait else Icons.Default.ScreenRotation,
                     contentDescription = if (isLandscape) "Switch to Portrait" else "Switch to Landscape",
+                    tint = Color.White
+                )
+            }
+            IconButton(onClick = onEnterPip) {
+                Icon(
+                    imageVector = Icons.Default.PictureInPictureAlt,
+                    contentDescription = "PIP Mode",
                     tint = Color.White
                 )
             }

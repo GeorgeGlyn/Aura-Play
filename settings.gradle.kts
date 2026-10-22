@@ -22,7 +22,6 @@ dependencyResolutionManagement {
 
 rootProject.name = "AuraPlay"
 include(":app")
-include(":app-tv")
 include(":core-network")
 include(":core-database")
 include(":core-player")

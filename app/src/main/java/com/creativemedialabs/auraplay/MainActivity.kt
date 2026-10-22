@@ -69,6 +69,23 @@ class MainActivity : ComponentActivity() {
     lateinit var downloadDao: DownloadDao
 
     private val playUrlFromNotification = mutableStateOf<String?>(null)
+    var isPlayerActive = false
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (Build.VERSION.SDK_INT in Build.VERSION_CODES.O..Build.VERSION_CODES.R) {
+            if (isPlayerActive) {
+                try {
+                    val params = android.app.PictureInPictureParams.Builder()
+                        .setAspectRatio(android.util.Rational(16, 9))
+                        .build()
+                    enterPictureInPictureMode(params)
+                } catch (e: Exception) {
+                    // Ignore
+                }
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -173,15 +190,43 @@ private fun AuraPlayApp(
         BottomNavItem.HotAndNew.route,
         BottomNavItem.Downloads.route
     )
-    val showBottomBar = currentRoute in bottomNavRoutes
     val context = LocalContext.current
     val isPlayerRoute = currentRoute?.startsWith("player") == true
 
+    var isInPipMode by remember {
+        mutableStateOf(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && (context as? Activity)?.isInPictureInPictureMode == true) true else false
+        )
+    }
+
+    DisposableEffect(context) {
+        val componentActivity = context as? androidx.activity.ComponentActivity
+        val listener = androidx.core.util.Consumer<androidx.core.app.PictureInPictureModeChangedInfo> { info ->
+            isInPipMode = info.isInPictureInPictureMode
+        }
+        componentActivity?.addOnPictureInPictureModeChangedListener(listener)
+        onDispose {
+            componentActivity?.removeOnPictureInPictureModeChangedListener(listener)
+        }
+    }
+
     LaunchedEffect(isPlayerRoute) {
-        if (!isPlayerRoute) {
+        (context as? MainActivity)?.isPlayerActive = isPlayerRoute
+    }
+
+    val isTv = remember {
+        BuildConfig.FLAVOR == "tv" ||
+        context.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK) ||
+        (context.getSystemService(android.content.Context.UI_MODE_SERVICE) as? android.app.UiModeManager)?.currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+    }
+
+    LaunchedEffect(isPlayerRoute, isInPipMode) {
+        if (!isPlayerRoute && !isTv && !isInPipMode) {
             (context as? Activity)?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         }
     }
+
+    val showBottomBar = currentRoute in bottomNavRoutes && !isInPipMode
 
     Scaffold(
         containerColor = Color(0xFF070707),
