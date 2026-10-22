@@ -1,14 +1,26 @@
 package com.creativemedialabs.auraplay
 
+import android.Manifest
+import android.app.Activity
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.compose.ui.platform.LocalContext
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Home
@@ -16,15 +28,22 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Whatshot
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.creativemedialabs.auraplay.core.database.dao.DownloadDao
 import com.creativemedialabs.auraplay.feature.details.ui.DetailsScreen
+import com.creativemedialabs.auraplay.feature.downloads.notification.DownloadNotificationHelper
+import com.creativemedialabs.auraplay.feature.downloads.notification.InAppNotificationBanner
+import com.creativemedialabs.auraplay.feature.downloads.notification.InAppNotificationManager
 import com.creativemedialabs.auraplay.feature.downloads.ui.DownloadsScreen
 import com.creativemedialabs.auraplay.feature.home.ui.HomeScreen
 import com.creativemedialabs.auraplay.feature.home.ui.NewAndHotScreen
@@ -34,6 +53,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import javax.inject.Inject
 
 sealed class BottomNavItem(val route: String, val label: String) {
     object Home : BottomNavItem("home", "Home")
@@ -44,9 +64,46 @@ sealed class BottomNavItem(val route: String, val label: String) {
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    @Inject
+    lateinit var downloadDao: DownloadDao
+
+    private val playUrlFromNotification = mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+        )
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
+        }
+
+        // Initialize download notification channels for system tray
+        DownloadNotificationHelper.initChannels(this)
+
+        handlePlayIntent(intent)
+
         setContent {
+            // Android 13+ runtime notification permission request
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val permissionLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.RequestPermission()
+                ) { /* handle result */ }
+
+                LaunchedEffect(Unit) {
+                    if (ContextCompat.checkSelfPermission(
+                            this@MainActivity,
+                            Manifest.permission.POST_NOTIFICATIONS
+                        ) != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                }
+            }
+
             MaterialTheme(
                 colorScheme = darkColorScheme(
                     primary = Color(0xFFE50914),
@@ -56,17 +113,59 @@ class MainActivity : ComponentActivity() {
                     onSurface = Color.White
                 )
             ) {
-                AuraPlayApp()
+                AuraPlayApp(
+                    downloadDao = downloadDao,
+                    initialPlayUrl = playUrlFromNotification.value
+                )
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        handlePlayIntent(intent)
+    }
+
+    private fun handlePlayIntent(intent: Intent?) {
+        intent?.getStringExtra("EXTRA_PLAY_URL")?.let { path ->
+            playUrlFromNotification.value = path
         }
     }
 }
 
 @Composable
-private fun AuraPlayApp() {
+private fun AuraPlayApp(
+    downloadDao: DownloadDao,
+    initialPlayUrl: String? = null
+) {
     val navController = rememberNavController()
     val currentBackStack by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStack?.destination?.route
+
+    // Direct playback from notification click
+    LaunchedEffect(initialPlayUrl) {
+        if (!initialPlayUrl.isNullOrBlank()) {
+            val encodedPath = URLEncoder.encode(initialPlayUrl, StandardCharsets.UTF_8.toString())
+            navController.navigate("player?url=$encodedPath")
+        }
+    }
+
+    // Monitor completed downloads while app is open to pop up in-app notification banner
+    val allDownloads by downloadDao.getAllDownloads().collectAsState(initial = emptyList())
+    val previousStatuses = remember { mutableMapOf<Int, String>() }
+
+    LaunchedEffect(allDownloads) {
+        for (dl in allDownloads) {
+            val prev = previousStatuses[dl.mediaId]
+            if (prev == "DOWNLOADING" && dl.downloadStatus == "COMPLETED") {
+                InAppNotificationManager.showDownloadCompleted(dl.title) {
+                    val encoded = URLEncoder.encode(dl.localFilePath, StandardCharsets.UTF_8.toString())
+                    navController.navigate("player?url=$encoded")
+                }
+            }
+            previousStatuses[dl.mediaId] = dl.downloadStatus
+        }
+    }
 
     val bottomNavRoutes = listOf(
         BottomNavItem.Home.route,
@@ -75,9 +174,18 @@ private fun AuraPlayApp() {
         BottomNavItem.Downloads.route
     )
     val showBottomBar = currentRoute in bottomNavRoutes
+    val context = LocalContext.current
+    val isPlayerRoute = currentRoute?.startsWith("player") == true
+
+    LaunchedEffect(isPlayerRoute) {
+        if (!isPlayerRoute) {
+            (context as? Activity)?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
+    }
 
     Scaffold(
         containerColor = Color(0xFF070707),
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
             if (showBottomBar) {
                 NavigationBar(
@@ -164,7 +272,11 @@ private fun AuraPlayApp() {
             }
         }
     ) { innerPadding ->
-        Box(modifier = Modifier.padding(innerPadding)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(bottom = innerPadding.calculateBottomPadding())
+        ) {
             NavHost(navController = navController, startDestination = "home") {
                 composable("home") {
                     HomeScreen(
@@ -219,6 +331,15 @@ private fun AuraPlayApp() {
                         onBack = { navController.popBackStack() }
                     )
                 }
+            }
+
+            // Sleek in-app popup notification banner (hidden during video playback)
+            if (!isPlayerRoute) {
+                InAppNotificationBanner(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .statusBarsPadding()
+                )
             }
         }
     }

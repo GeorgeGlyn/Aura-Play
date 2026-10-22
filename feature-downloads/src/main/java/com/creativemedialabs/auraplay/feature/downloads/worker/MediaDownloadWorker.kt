@@ -10,10 +10,15 @@ import androidx.work.workDataOf
 import com.creativemedialabs.auraplay.core.database.dao.DownloadDao
 import com.creativemedialabs.auraplay.core.database.dao.EpisodeDao
 import com.creativemedialabs.auraplay.core.database.entity.DownloadEntity
+import com.creativemedialabs.auraplay.feature.downloads.notification.DownloadNotificationHelper
+import com.creativemedialabs.auraplay.feature.downloads.notification.InAppNotificationManager
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import android.content.pm.ServiceInfo
+import android.os.Build
+import androidx.work.ForegroundInfo
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -46,6 +51,7 @@ class MediaDownloadWorker @AssistedInject constructor(
         const val SPEED_KEY = "speed"
         const val KEY_REFERER = "referer"
         const val KEY_USER_AGENT = "userAgent"
+        const val KEY_PREFERRED_QUALITY = "preferredQuality"
 
         fun isWebEmbedUrl(url: String): Boolean {
             val lower = url.lowercase()
@@ -68,8 +74,15 @@ class MediaDownloadWorker @AssistedInject constructor(
         val seasonNumber = inputData.getInt(KEY_SEASON_NUMBER, -1)
         val episodeNumber = inputData.getInt(KEY_EPISODE_NUMBER, -1)
         val episodeName = inputData.getString(KEY_EPISODE_NAME) ?: title
+        val preferredQuality = inputData.getString(KEY_PREFERRED_QUALITY) ?: "1080p"
 
         if (mediaId == -1) return@withContext Result.failure()
+
+        try {
+            setForeground(getForegroundInfo())
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to setForeground for worker: ${e.message}")
+        }
 
         var inputReferer = inputData.getString(KEY_REFERER)
         var inputUserAgent = inputData.getString(KEY_USER_AGENT)
@@ -93,7 +106,7 @@ class MediaDownloadWorker @AssistedInject constructor(
             } else {
                 val err = resolveResult.exceptionOrNull()?.message ?: "Failed to resolve stream"
                 Log.e(TAG, "Worker failed to resolve stream: $err")
-                markFailed(mediaId, mediaType, title, posterPath, seriesId, seasonNumber, episodeNumber)
+                markFailed(mediaId, mediaType, title, posterPath, seriesId, seasonNumber, episodeNumber, episodeName)
                 return@withContext Result.failure()
             }
         }
@@ -116,7 +129,7 @@ class MediaDownloadWorker @AssistedInject constructor(
         }
 
         val isHls = videoUrl.contains(".m3u8", ignoreCase = true)
-        val fileExt = if (isHls) "ts" else "mp4"
+        val fileExt = if (isHls) "m3u8" else "mp4"
 
         // Construct clean storage path
         val sanitizedTitle = title.replace("[^a-zA-Z0-9.-]".toRegex(), "_")
@@ -124,20 +137,37 @@ class MediaDownloadWorker @AssistedInject constructor(
             val sanitizedEpName = episodeName.replace("[^a-zA-Z0-9.-]".toRegex(), "_")
             val seasonPad = String.format("%02d", seasonNumber)
             val epPad = String.format("%02d", episodeNumber)
-            File(
-                applicationContext.getExternalFilesDir(null),
-                "downloads/TV_Shows/$sanitizedTitle/Season_$seasonPad/S${seasonPad}E${epPad}_$sanitizedEpName.$fileExt"
-            )
+            if (isHls) {
+                File(
+                    applicationContext.getExternalFilesDir(null),
+                    "downloads/TV_Shows/$sanitizedTitle/Season_$seasonPad/S${seasonPad}E${epPad}_$sanitizedEpName/playlist.m3u8"
+                )
+            } else {
+                File(
+                    applicationContext.getExternalFilesDir(null),
+                    "downloads/TV_Shows/$sanitizedTitle/Season_$seasonPad/S${seasonPad}E${epPad}_$sanitizedEpName.$fileExt"
+                )
+            }
         } else {
-            File(
-                applicationContext.getExternalFilesDir(null),
-                "downloads/Movies/$sanitizedTitle/${sanitizedTitle}.$fileExt"
-            )
+            if (isHls) {
+                File(
+                    applicationContext.getExternalFilesDir(null),
+                    "downloads/Movies/$sanitizedTitle/playlist.m3u8"
+                )
+            } else {
+                File(
+                    applicationContext.getExternalFilesDir(null),
+                    "downloads/Movies/$sanitizedTitle/${sanitizedTitle}.$fileExt"
+                )
+            }
         }
         outputFile.parentFile?.mkdirs()
 
+        val cleanEpName = if (!episodeName.isNullOrBlank() && !episodeName.equals(title, ignoreCase = true)) {
+            " - $episodeName"
+        } else ""
         val displayTitle = if (seriesId > 0 && seasonNumber > 0 && episodeNumber > 0) {
-            "$title S${String.format("%02d", seasonNumber)}E${String.format("%02d", episodeNumber)}"
+            "$title S${String.format("%02d", seasonNumber)}E${String.format("%02d", episodeNumber)}$cleanEpName"
         } else {
             title
         }
@@ -166,6 +196,15 @@ class MediaDownloadWorker @AssistedInject constructor(
             )
         }
 
+        // Show initial ongoing download notification
+        DownloadNotificationHelper.showProgressNotification(
+            context = applicationContext,
+            mediaId = mediaId,
+            title = displayTitle,
+            progress = 0,
+            speed = "Starting..."
+        )
+
         if (videoUrl.startsWith("magnet:", ignoreCase = true)) {
             Log.d(TAG, "Starting native BitTorrent download for magnet: $videoUrl")
             val saveFolder = outputFile.parentFile ?: File(applicationContext.getExternalFilesDir(null), "downloads/Torrents")
@@ -183,6 +222,13 @@ class MediaDownloadWorker @AssistedInject constructor(
                         )
                     )
                     downloadDao.updateProgress(mediaId, "DOWNLOADING", p.progressPercent)
+                    DownloadNotificationHelper.showProgressNotification(
+                        context = applicationContext,
+                        mediaId = mediaId,
+                        title = displayTitle,
+                        progress = p.progressPercent,
+                        speed = "$speedFormatted (${p.numSeeds} seeds)"
+                    )
                     if (seriesId > 0 && seasonNumber > 0 && episodeNumber > 0) {
                         episodeDao.updateDownloadStatus(
                             seriesId = seriesId,
@@ -209,16 +255,18 @@ class MediaDownloadWorker @AssistedInject constructor(
 
         try {
             val client = OkHttpClient.Builder()
-                .connectTimeout(30, TimeUnit.SECONDS)
-                .readTimeout(60, TimeUnit.SECONDS)
+                .connectTimeout(45, TimeUnit.SECONDS)
+                .readTimeout(90, TimeUnit.SECONDS)
+                .retryOnConnectionFailure(true)
                 .build()
 
             // If the stream is an HLS playlist (.m3u8), download its video chunks directly
             if (isHls) {
-                downloadHlsStream(
+                val hlsSuccess = downloadHlsStream(
                     client = client,
                     m3u8Url = videoUrl,
                     outputFile = outputFile,
+                    preferredQuality = preferredQuality,
                     mediaId = mediaId,
                     mediaType = mediaType,
                     title = title,
@@ -229,12 +277,11 @@ class MediaDownloadWorker @AssistedInject constructor(
                     referer = referer,
                     userAgent = userAgent
                 )
-                if (outputFile.exists() && outputFile.length() > 500 * 1024) {
-                    markCompleted(mediaId, mediaType, title, posterPath, outputFile, seriesId, seasonNumber, episodeNumber)
+                if (hlsSuccess && outputFile.exists() && outputFile.length() > 0) {
+                    markCompleted(mediaId, mediaType, title, posterPath, outputFile, seriesId, seasonNumber, episodeNumber, episodeName)
                     return@withContext Result.success(Data.Builder().putString("filePath", outputFile.absolutePath).build())
                 } else {
-                    outputFile.delete()
-                    markFailed(mediaId, mediaType, title, posterPath, seriesId, seasonNumber, episodeNumber)
+                    markFailed(mediaId, mediaType, title, posterPath, seriesId, seasonNumber, episodeNumber, episodeName)
                     return@withContext Result.failure()
                 }
             }
@@ -340,6 +387,14 @@ class MediaDownloadWorker @AssistedInject constructor(
                                 )
                             )
 
+                            DownloadNotificationHelper.showProgressNotification(
+                                context = applicationContext,
+                                mediaId = mediaId,
+                                title = displayTitle,
+                                progress = progress,
+                                speed = speedFormatted
+                            )
+
                             lastReportTime = now
                             bytesSinceLastReport = 0L
                         }
@@ -348,11 +403,11 @@ class MediaDownloadWorker @AssistedInject constructor(
             }
 
             if (outputFile.exists() && outputFile.length() > 500 * 1024) {
-                markCompleted(mediaId, mediaType, title, posterPath, outputFile, seriesId, seasonNumber, episodeNumber)
+                markCompleted(mediaId, mediaType, title, posterPath, outputFile, seriesId, seasonNumber, episodeNumber, episodeName)
                 Result.success(Data.Builder().putString("filePath", outputFile.absolutePath).build())
             } else {
                 outputFile.delete()
-                markFailed(mediaId, mediaType, title, posterPath, seriesId, seasonNumber, episodeNumber)
+                markFailed(mediaId, mediaType, title, posterPath, seriesId, seasonNumber, episodeNumber, episodeName)
                 Result.failure()
             }
         } catch (e: Exception) {
@@ -360,7 +415,7 @@ class MediaDownloadWorker @AssistedInject constructor(
             if (outputFile.exists() && outputFile.length() < 500 * 1024) {
                 outputFile.delete()
             }
-            markFailed(mediaId, mediaType, title, posterPath, seriesId, seasonNumber, episodeNumber)
+            markFailed(mediaId, mediaType, title, posterPath, seriesId, seasonNumber, episodeNumber, episodeName)
             Result.failure()
         }
     }
@@ -373,10 +428,14 @@ class MediaDownloadWorker @AssistedInject constructor(
         outputFile: File,
         seriesId: Int,
         seasonNumber: Int,
-        episodeNumber: Int
+        episodeNumber: Int,
+        episodeName: String? = null
     ) {
+        val cleanEp = if (!episodeName.isNullOrBlank() && !episodeName.equals(title, ignoreCase = true)) {
+            " - $episodeName"
+        } else ""
         val displayTitle = if (seriesId > 0 && seasonNumber > 0 && episodeNumber > 0) {
-            "$title S${String.format("%02d", seasonNumber)}E${String.format("%02d", episodeNumber)}"
+            "$title S${String.format("%02d", seasonNumber)}E${String.format("%02d", episodeNumber)}$cleanEp"
         } else {
             title
         }
@@ -401,6 +460,15 @@ class MediaDownloadWorker @AssistedInject constructor(
                 progress = 100
             )
         }
+
+        // Send completed notification to panel and in-app banner
+        DownloadNotificationHelper.showCompletedNotification(
+            context = applicationContext,
+            mediaId = mediaId,
+            title = displayTitle,
+            localPath = outputFile.absolutePath
+        )
+        InAppNotificationManager.showDownloadCompleted(displayTitle)
     }
 
     private suspend fun markFailed(
@@ -410,10 +478,14 @@ class MediaDownloadWorker @AssistedInject constructor(
         posterPath: String?,
         seriesId: Int,
         seasonNumber: Int,
-        episodeNumber: Int
+        episodeNumber: Int,
+        episodeName: String? = null
     ) {
+        val cleanEp = if (!episodeName.isNullOrBlank() && !episodeName.equals(title, ignoreCase = true)) {
+            " - $episodeName"
+        } else ""
         val displayTitle = if (seriesId > 0 && seasonNumber > 0 && episodeNumber > 0) {
-            "$title S${String.format("%02d", seasonNumber)}E${String.format("%02d", episodeNumber)}"
+            "$title S${String.format("%02d", seasonNumber)}E${String.format("%02d", episodeNumber)}$cleanEp"
         } else {
             title
         }
@@ -438,12 +510,19 @@ class MediaDownloadWorker @AssistedInject constructor(
                 progress = 0
             )
         }
+
+        DownloadNotificationHelper.showFailedNotification(
+            context = applicationContext,
+            mediaId = mediaId,
+            title = displayTitle
+        )
     }
 
     private suspend fun downloadHlsStream(
         client: OkHttpClient,
         m3u8Url: String,
         outputFile: File,
+        preferredQuality: String,
         mediaId: Int,
         mediaType: String,
         title: String,
@@ -453,7 +532,7 @@ class MediaDownloadWorker @AssistedInject constructor(
         episodeNumber: Int,
         referer: String,
         userAgent: String
-    ) {
+    ): Boolean {
         val req = Request.Builder()
             .url(m3u8Url)
             .header("User-Agent", userAgent)
@@ -464,11 +543,19 @@ class MediaDownloadWorker @AssistedInject constructor(
         val content = resp.body?.string().orEmpty()
         if (!content.contains("#EXTM3U")) throw Exception("Invalid M3U8 content")
 
+        val targetHeight = when {
+            preferredQuality.contains("480") -> 480
+            preferredQuality.contains("720") -> 720
+            preferredQuality.contains("2160") || preferredQuality.contains("4k", ignoreCase = true) -> 2160
+            else -> 1080
+        }
+
         // Parse master playlist if multiple variants exist
         var targetVariant = m3u8Url
         if (content.contains("#EXT-X-STREAM-INF")) {
             val lines = content.lines().map { it.trim() }.filter { it.isNotEmpty() }
             var bestUrl: String? = null
+            var bestDiff = Int.MAX_VALUE
             var bestScore = -1
 
             for (i in lines.indices) {
@@ -476,14 +563,18 @@ class MediaDownloadWorker @AssistedInject constructor(
                 if (line.startsWith("#EXT-X-STREAM-INF")) {
                     val nextLine = lines.getOrNull(i + 1)
                     if (nextLine != null && !nextLine.startsWith("#")) {
-                        val score = when {
+                        val resMatch = Regex("RESOLUTION=\\d+x(\\d+)").find(line)
+                        val height = resMatch?.groupValues?.get(1)?.toIntOrNull() ?: when {
+                            line.contains("2160") || nextLine.contains("2160") -> 2160
                             line.contains("1080") || nextLine.contains("1080") -> 1080
                             line.contains("720") || nextLine.contains("720") -> 720
                             line.contains("480") || nextLine.contains("480") -> 480
                             else -> 360
                         }
-                        if (score > bestScore) {
-                            bestScore = score
+                        val diff = kotlin.math.abs(height - targetHeight)
+                        if (diff < bestDiff || (diff == bestDiff && height > bestScore)) {
+                            bestDiff = diff
+                            bestScore = height
                             bestUrl = nextLine
                         }
                     }
@@ -509,97 +600,168 @@ class MediaDownloadWorker @AssistedInject constructor(
             content
         }
 
-        val segmentLines = segmentContent.lines()
-            .map { it.trim() }
-            .filter { it.isNotEmpty() && !it.startsWith("#") }
+        val segmentsDir = outputFile.parentFile ?: File(outputFile.absolutePath + "_dir")
+        segmentsDir.mkdirs()
 
-        if (segmentLines.isEmpty()) throw Exception("No segments found in HLS playlist")
+        // Parse segments and build local playlist.m3u8
+        val localPlaylistLines = mutableListOf<String>()
+        val segmentsToDownload = mutableListOf<Pair<String, File>>() // remoteUrl, localFile
 
-        val totalSegments = segmentLines.size
+        val rawLines = segmentContent.lines().map { it.trim() }.filter { it.isNotEmpty() }
+        var segIndex = 0
+        for (line in rawLines) {
+            if (line.startsWith("#")) {
+                localPlaylistLines.add(line)
+            } else {
+                val segFileName = String.format("seg_%05d.ts", segIndex)
+                val segFile = File(segmentsDir, segFileName)
+                val segUrl = resolveRelativeUrl(targetVariant, line)
+                segmentsToDownload.add(Pair(segUrl, segFile))
+                localPlaylistLines.add(segFileName)
+                segIndex++
+            }
+        }
+        if (!localPlaylistLines.any { it.startsWith("#EXT-X-ENDLIST") }) {
+            localPlaylistLines.add("#EXT-X-ENDLIST")
+        }
+
+        // Write the local playlist.m3u8
+        outputFile.writeText(localPlaylistLines.joinToString("\n"))
+
+        val totalSegments = segmentsToDownload.size
+        if (totalSegments == 0) throw Exception("No segments found in HLS playlist")
+
         var completedSegments = 0
         var lastReportTime = System.currentTimeMillis()
         var bytesSinceLastReport = 0L
+        var totalBytes = 0L
 
-        FileOutputStream(outputFile, false).use { outStream ->
-            for (seg in segmentLines) {
-                if (isStopped) {
-                    throw Exception("Worker stopped by system")
-                }
+        val displayTitle = if (seriesId > 0 && seasonNumber > 0 && episodeNumber > 0) {
+            "$title S${String.format("%02d", seasonNumber)}E${String.format("%02d", episodeNumber)}"
+        } else {
+            title
+        }
 
-                val segUrl = resolveRelativeUrl(targetVariant, seg)
-                val segReq = Request.Builder()
-                    .url(segUrl)
-                    .header("User-Agent", userAgent)
-                    .header("Referer", referer)
-                    .build()
+        for ((segUrl, segFile) in segmentsToDownload) {
+            if (isStopped) {
+                throw Exception("Worker stopped by system")
+            }
 
-                var segResp = client.newCall(segReq).execute()
-                if (!segResp.isSuccessful) {
-                    // Retry once
-                    kotlinx.coroutines.delay(300)
-                    segResp = client.newCall(segReq).execute()
-                }
+            if (segFile.exists() && segFile.length() > 0) {
+                totalBytes += segFile.length()
+            } else {
+                var downloadSuccess = false
+                var attempts = 0
+                while (!downloadSuccess && attempts < 3) {
+                    attempts++
+                    if (isStopped) break
+                    try {
+                        val segReq = Request.Builder()
+                            .url(segUrl)
+                            .header("User-Agent", userAgent)
+                            .header("Referer", referer)
+                            .build()
 
-                if (segResp.isSuccessful) {
-                    segResp.body?.byteStream()?.use { inStream ->
-                        val buffer = ByteArray(16 * 1024)
-                        var read: Int
-                        while (inStream.read(buffer).also { read = it } != -1) {
-                            outStream.write(buffer, 0, read)
-                            bytesSinceLastReport += read
+                        val segResp = client.newCall(segReq).execute()
+                        if (segResp.isSuccessful) {
+                            val tempFile = File(segmentsDir, "${segFile.name}.tmp")
+                            FileOutputStream(tempFile).use { outStream ->
+                                segResp.body?.byteStream()?.use { inStream ->
+                                    val buffer = ByteArray(16 * 1024)
+                                    var read: Int
+                                    while (inStream.read(buffer).also { read = it } != -1) {
+                                        outStream.write(buffer, 0, read)
+                                        bytesSinceLastReport += read
+                                        totalBytes += read
+                                    }
+                                }
+                            }
+                            if (tempFile.exists() && tempFile.length() > 0) {
+                                tempFile.renameTo(segFile)
+                                downloadSuccess = true
+                            }
+                        } else {
+                            kotlinx.coroutines.delay(400L * attempts)
                         }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Segment download attempt $attempts failed for ${segFile.name}: ${e.message}")
+                        kotlinx.coroutines.delay(400L * attempts)
                     }
-                }
-
-                completedSegments++
-                val progress = ((completedSegments.toFloat() / totalSegments) * 100).toInt().coerceIn(0, 100)
-
-                val now = System.currentTimeMillis()
-                if (now - lastReportTime >= 1000 || completedSegments == totalSegments) {
-                    val timeDeltaSec = (now - lastReportTime) / 1000f
-                    val speedBytesPerSec = if (timeDeltaSec > 0) (bytesSinceLastReport / timeDeltaSec).toLong() else 0L
-                    val speedFormatted = formatSpeed(speedBytesPerSec)
-
-                    val displayTitle = if (seriesId > 0 && seasonNumber > 0 && episodeNumber > 0) {
-                        "$title S${String.format("%02d", seasonNumber)}E${String.format("%02d", episodeNumber)}"
-                    } else {
-                        title
-                    }
-
-                    downloadDao.insertOrUpdate(
-                        DownloadEntity(
-                            mediaId = mediaId,
-                            mediaType = mediaType,
-                            title = displayTitle,
-                            localFilePath = outputFile.absolutePath,
-                            posterPath = posterPath,
-                            downloadStatus = if (completedSegments == totalSegments) "COMPLETED" else "DOWNLOADING",
-                            progressPercentage = progress
-                        )
-                    )
-
-                    if (seriesId > 0 && seasonNumber > 0 && episodeNumber > 0) {
-                        episodeDao.updateDownloadStatus(
-                            seriesId = seriesId,
-                            seasonNumber = seasonNumber,
-                            episodeNumber = episodeNumber,
-                            status = if (completedSegments == totalSegments) "DOWNLOADED" else "DOWNLOADING",
-                            localPath = outputFile.absolutePath,
-                            progress = progress
-                        )
-                    }
-
-                    setProgress(
-                        workDataOf(
-                            PROGRESS_KEY to progress,
-                            SPEED_KEY to "$speedFormatted ($completedSegments/$totalSegments)"
-                        )
-                    )
-
-                    lastReportTime = now
-                    bytesSinceLastReport = 0L
                 }
             }
+
+            completedSegments++
+            val progress = ((completedSegments.toFloat() / totalSegments) * 100).toInt().coerceIn(0, 100)
+
+            val now = System.currentTimeMillis()
+            if (now - lastReportTime >= 1000 || completedSegments == totalSegments) {
+                val timeDeltaSec = (now - lastReportTime) / 1000f
+                val speedBytesPerSec = if (timeDeltaSec > 0) (bytesSinceLastReport / timeDeltaSec).toLong() else 0L
+                val speedFormatted = formatSpeed(speedBytesPerSec)
+
+                downloadDao.insertOrUpdate(
+                    DownloadEntity(
+                        mediaId = mediaId,
+                        mediaType = mediaType,
+                        title = displayTitle,
+                        localFilePath = outputFile.absolutePath,
+                        posterPath = posterPath,
+                        downloadStatus = if (completedSegments == totalSegments) "COMPLETED" else "DOWNLOADING",
+                        progressPercentage = progress
+                    )
+                )
+
+                if (seriesId > 0 && seasonNumber > 0 && episodeNumber > 0) {
+                    episodeDao.updateDownloadStatus(
+                        seriesId = seriesId,
+                        seasonNumber = seasonNumber,
+                        episodeNumber = episodeNumber,
+                        status = if (completedSegments == totalSegments) "DOWNLOADED" else "DOWNLOADING",
+                        localPath = outputFile.absolutePath,
+                        progress = progress
+                    )
+                }
+
+                setProgress(
+                    workDataOf(
+                        PROGRESS_KEY to progress,
+                        SPEED_KEY to "$speedFormatted ($completedSegments/$totalSegments)"
+                    )
+                )
+
+                DownloadNotificationHelper.showProgressNotification(
+                    context = applicationContext,
+                    mediaId = mediaId,
+                    title = displayTitle,
+                    progress = progress,
+                    speed = "$speedFormatted ($completedSegments/$totalSegments)"
+                )
+
+                lastReportTime = now
+                bytesSinceLastReport = 0L
+            }
+        }
+
+        val minRequired = (totalSegments * 0.95).toInt().coerceAtLeast(1)
+        return completedSegments >= minRequired && totalBytes > 500 * 1024
+    }
+
+    override suspend fun getForegroundInfo(): ForegroundInfo {
+        val mediaId = inputData.getInt(KEY_MEDIA_ID, 1)
+        val title = inputData.getString(KEY_TITLE) ?: "Downloading media..."
+        val notification = DownloadNotificationHelper.createForegroundNotification(
+            context = applicationContext,
+            mediaId = mediaId,
+            title = title
+        )
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ForegroundInfo(
+                mediaId,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            )
+        } else {
+            ForegroundInfo(mediaId, notification)
         }
     }
 

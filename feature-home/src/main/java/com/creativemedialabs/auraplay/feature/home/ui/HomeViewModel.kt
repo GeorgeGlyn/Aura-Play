@@ -67,10 +67,10 @@ class HomeViewModel @Inject constructor(
             val topRatedRes = topRatedDeferred.await()
             val tvRes = tvDeferred.await()
 
-            val trendingList = trendingRes.getOrNull()?.results ?: emptyList()
-            val popularList = popularRes.getOrNull()?.results ?: emptyList()
-            val topRatedList = topRatedRes.getOrNull()?.results ?: emptyList()
-            val tvList = tvRes.getOrNull()?.results ?: emptyList()
+            val trendingList = (trendingRes.getOrNull()?.results ?: emptyList()).filter { it.isReleased }
+            val popularList = (popularRes.getOrNull()?.results ?: emptyList()).filter { it.isReleased }
+            val topRatedList = (topRatedRes.getOrNull()?.results ?: emptyList()).filter { it.isReleased }
+            val tvList = (tvRes.getOrNull()?.results ?: emptyList()).filter { it.isReleased }
 
             val spotlight = trendingList.firstOrNull() ?: popularList.firstOrNull()
             val top10 = topRatedList.take(10).ifEmpty { trendingList.take(10) }

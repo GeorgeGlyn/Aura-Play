@@ -1,0 +1,20 @@
+{
+  "name": "aura-play-tizen-web",
+  "version": "1.0.0",
+  "description": "Unified Cinema & TV Streaming Web Application for Samsung Tizen Smart TV and Mobile",
+  "main": "index.html",
+  "scripts": {
+    "start": "npx serve . -l 3000",
+    "build:wgt": "node build-wgt.js"
+  },
+  "keywords": [
+    "tizen",
+    "samsung-tv",
+    "smart-tv",
+    "streaming",
+    "tmdb",
+    "pwa"
+  ],
+  "author": "Creative Media Labs",
+  "license": "MIT"
+}

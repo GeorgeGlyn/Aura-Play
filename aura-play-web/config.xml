@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<widget xmlns="http://www.w3.org/ns/widgets" 
+        xmlns:tizen="http://tizen.org/ns/widgets" 
+        id="http://creativemedialabs.com/AuraPlay" 
+        version="1.0.0" 
+        viewmodes="maximized">
+    <tizen:application id="AuraPlayTV.AuraPlay" 
+                       exec="index.html" 
+                       screen-orientation="landscape" 
+                       package="AuraPlayTV" 
+                       required_version="3.0"/>
+    <content src="index.html"/>
+    <feature name="http://tizen.org/feature/screen.size.all"/>
+    <icon src="icon.png"/>
+    <name>Aura Play</name>
+    <description>Aura Play - Cinema &amp; TV Streaming for Samsung Tizen TV &amp; Mobile</description>
+    <author href="https://github.com/GeorgeGlyn/Aura-Play">Creative Media Labs</author>
+    <tizen:privilege name="http://tizen.org/privilege/internet"/>
+    <tizen:privilege name="http://tizen.org/privilege/tv.audio"/>
+    <tizen:privilege name="http://tizen.org/privilege/tv.display"/>
+    <tizen:privilege name="http://tizen.org/privilege/tv.inputdevice"/>
+    <tizen:privilege name="http://developer.samsung.com/privilege/network.public"/>
+    <tizen:privilege name="http://developer.samsung.com/privilege/avplay"/>
+    <tizen:profile name="tv"/>
+    <tizen:setting screen-orientation="landscape" context-menu="enable" background-support="disable" encryption="disable" install-location="auto" hwkey-event="enable"/>
+    <access origin="*" subdomains="true"/>
+</widget>

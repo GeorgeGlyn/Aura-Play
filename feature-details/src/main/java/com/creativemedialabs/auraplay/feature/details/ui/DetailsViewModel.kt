@@ -22,6 +22,7 @@ import com.creativemedialabs.auraplay.core.network.repository.TmdbRepository
 import com.creativemedialabs.auraplay.core.network.resolver.MediaRelease
 import com.creativemedialabs.auraplay.core.network.resolver.MediaResolver
 import com.creativemedialabs.auraplay.core.network.resolver.ResolvedStream
+import com.creativemedialabs.auraplay.feature.downloads.notification.InAppNotificationManager
 import com.creativemedialabs.auraplay.feature.downloads.worker.MediaDownloadWorker
 import com.creativemedialabs.auraplay.feature.downloads.worker.SeriesMonitorWorker
 import com.creativemedialabs.auraplay.feature.remote.client.NsdClient
@@ -48,7 +49,10 @@ data class DetailsUiState(
     val availableReleases: List<MediaRelease> = emptyList(),
     val isSearchingReleases: Boolean = false,
     val showReleaseSheet: Boolean = false,
-    val releaseSearchTitle: String = ""
+    val releaseSearchTitle: String = "",
+    val showDownloadSheet: Boolean = false,
+    val selectedEpisodeForDownload: TmdbEpisodeItem? = null,
+    val downloadSheetTitle: String = ""
 )
 
 @HiltViewModel
@@ -143,11 +147,11 @@ class DetailsViewModel @Inject constructor(
 
             detailRes.fold(
                 onSuccess = { detail ->
-                    val seasonsList = detail.safeSeasons
+                    val seasonsList = detail.safeSeasons.filter { it.isAired }
                     val isTvShow = isTv || detail.isTvShow || seasonsList.isNotEmpty()
                     _uiState.value = DetailsUiState(
                         mediaDetail = detail,
-                        recommendations = recsRes.getOrNull()?.results ?: emptyList(),
+                        recommendations = (recsRes.getOrNull()?.results ?: emptyList()).filter { it.isReleased },
                         isLoading = false,
                         isTvShow = isTvShow
                     )
@@ -168,7 +172,20 @@ class DetailsViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(selectedSeason = seasonNumber)
             val seasonRes = repository.getSeasonDetails(mediaId, seasonNumber)
             seasonRes.onSuccess { seasonDetail ->
-                _uiState.value = _uiState.value.copy(seasonEpisodes = seasonDetail.safeEpisodes)
+                val airedEpisodes = seasonDetail.safeEpisodes.filter { it.isAired }
+                _uiState.value = _uiState.value.copy(seasonEpisodes = airedEpisodes)
+                val entities = airedEpisodes.map { ep ->
+                    com.creativemedialabs.auraplay.core.database.entity.EpisodeEntity(
+                        seriesId = mediaId,
+                        seasonNumber = seasonNumber,
+                        episodeNumber = ep.episodeNumber,
+                        name = ep.name,
+                        overview = ep.overview ?: "",
+                        stillPath = ep.stillPath,
+                        airDate = ep.airDate
+                    )
+                }
+                episodeDao.insertOrUpdateAll(entities)
             }
         }
     }
@@ -217,11 +234,59 @@ class DetailsViewModel @Inject constructor(
         }
     }
 
-    fun downloadEpisode(context: Context, episode: TmdbEpisodeItem) {
+    fun openDownloadSheet(episode: TmdbEpisodeItem? = null) {
+        val detail = _uiState.value.mediaDetail ?: return
+        val sheetTitle = if (episode != null) {
+            "${detail.name ?: detail.title ?: "Series"} - S${episode.seasonNumber}E${episode.episodeNumber}: ${episode.name}"
+        } else {
+            detail.name ?: detail.title ?: "Movie"
+        }
+        _uiState.value = _uiState.value.copy(
+            showDownloadSheet = true,
+            selectedEpisodeForDownload = episode,
+            downloadSheetTitle = sheetTitle
+        )
+        if (episode != null) {
+            searchReleasesForEpisode(episode, openSheet = false)
+        } else {
+            searchReleasesForMedia(openSheet = false)
+        }
+    }
+
+    fun closeDownloadSheet() {
+        _uiState.value = _uiState.value.copy(
+            showDownloadSheet = false,
+            selectedEpisodeForDownload = null
+        )
+    }
+
+    fun confirmDownload(
+        context: Context,
+        preferredQuality: String = "1080p",
+        customVideoUrl: String? = null
+    ) {
+        val ep = _uiState.value.selectedEpisodeForDownload
+        closeDownloadSheet()
+        if (ep != null) {
+            downloadEpisode(context, ep, preferredQuality, customVideoUrl)
+        } else {
+            startDownload(context, preferredQuality, customVideoUrl)
+        }
+    }
+
+    fun downloadEpisode(
+        context: Context,
+        episode: TmdbEpisodeItem,
+        preferredQuality: String = "1080p",
+        customVideoUrl: String? = null
+    ) {
         val detail = _uiState.value.mediaDetail ?: return
         viewModelScope.launch {
             val uniqueEpId = (mediaId % 100000) * 10000 + (episode.seasonNumber * 100) + episode.episodeNumber
-            val epTitle = "${detail.name ?: detail.title ?: "TV Show"} S${String.format("%02d", episode.seasonNumber)}E${String.format("%02d", episode.episodeNumber)}"
+            val seriesName = detail.name ?: detail.title ?: "TV Show"
+            val epName = episode.name.ifBlank { "Episode ${episode.episodeNumber}" }
+            val epTitle = "$seriesName S${String.format("%02d", episode.seasonNumber)}E${String.format("%02d", episode.episodeNumber)} - $epName"
+            val thumbPath = episode.stillPath ?: detail.backdropPath ?: detail.posterPath
 
             // 1. Immediately insert into Room DB as QUEUED so it appears in Downloads page instantly!
             val initialDownload = DownloadEntity(
@@ -229,11 +294,12 @@ class DetailsViewModel @Inject constructor(
                 mediaType = "tv",
                 title = epTitle,
                 localFilePath = "",
-                posterPath = detail.posterPath,
+                posterPath = thumbPath,
                 downloadStatus = "QUEUED",
                 progressPercentage = 0
             )
             downloadDao.insertOrUpdate(initialDownload)
+            InAppNotificationManager.showDownloadStarted(epTitle, preferredQuality)
             episodeDao.updateDownloadStatus(
                 seriesId = mediaId,
                 seasonNumber = episode.seasonNumber,
@@ -246,14 +312,15 @@ class DetailsViewModel @Inject constructor(
             // Enqueue persistent WorkManager job immediately with RESOLVE command - will not cancel if screen closes!
             val inputData = Data.Builder()
                 .putInt(MediaDownloadWorker.KEY_MEDIA_ID, uniqueEpId)
-                .putString(MediaDownloadWorker.KEY_VIDEO_URL, "RESOLVE")
-                .putString(MediaDownloadWorker.KEY_TITLE, detail.name ?: detail.title ?: "TV Show")
-                .putString(MediaDownloadWorker.KEY_POSTER_PATH, detail.posterPath)
+                .putString(MediaDownloadWorker.KEY_VIDEO_URL, customVideoUrl ?: "RESOLVE")
+                .putString(MediaDownloadWorker.KEY_PREFERRED_QUALITY, preferredQuality)
+                .putString(MediaDownloadWorker.KEY_TITLE, seriesName)
+                .putString(MediaDownloadWorker.KEY_POSTER_PATH, thumbPath)
                 .putString(MediaDownloadWorker.KEY_MEDIA_TYPE, "tv")
                 .putInt(MediaDownloadWorker.KEY_SERIES_ID, mediaId)
                 .putInt(MediaDownloadWorker.KEY_SEASON_NUMBER, episode.seasonNumber)
                 .putInt(MediaDownloadWorker.KEY_EPISODE_NUMBER, episode.episodeNumber)
-                .putString(MediaDownloadWorker.KEY_EPISODE_NAME, episode.name)
+                .putString(MediaDownloadWorker.KEY_EPISODE_NAME, epName)
                 .build()
 
             val downloadWork = OneTimeWorkRequestBuilder<MediaDownloadWorker>()
@@ -264,7 +331,7 @@ class DetailsViewModel @Inject constructor(
 
             _uiState.value = _uiState.value.copy(
                 isResolvingStream = false,
-                castSuccessMessage = "Episode S${episode.seasonNumber}E${episode.episodeNumber} download queued!"
+                castSuccessMessage = "Episode S${episode.seasonNumber}E${episode.episodeNumber} ($preferredQuality) download queued!"
             )
         }
     }
@@ -295,7 +362,11 @@ class DetailsViewModel @Inject constructor(
     }
 
 
-    fun startDownload(context: Context) {
+    fun startDownload(
+        context: Context,
+        preferredQuality: String = "1080p",
+        customVideoUrl: String? = null
+    ) {
         val detail = _uiState.value.mediaDetail ?: return
         viewModelScope.launch {
             val isTv = _uiState.value.isTvShow
@@ -314,11 +385,13 @@ class DetailsViewModel @Inject constructor(
                 progressPercentage = 0
             )
             downloadDao.insertOrUpdate(initialDownload)
+            InAppNotificationManager.showDownloadStarted(detail.displayTitle, preferredQuality)
 
             // Enqueue persistent WorkManager job immediately with RESOLVE command
             val inputData = Data.Builder()
                 .putInt(MediaDownloadWorker.KEY_MEDIA_ID, mediaId)
-                .putString(MediaDownloadWorker.KEY_VIDEO_URL, "RESOLVE")
+                .putString(MediaDownloadWorker.KEY_VIDEO_URL, customVideoUrl ?: "RESOLVE")
+                .putString(MediaDownloadWorker.KEY_PREFERRED_QUALITY, preferredQuality)
                 .putString(MediaDownloadWorker.KEY_TITLE, detail.displayTitle)
                 .putString(MediaDownloadWorker.KEY_POSTER_PATH, detail.posterPath)
                 .putString(MediaDownloadWorker.KEY_MEDIA_TYPE, targetType)
@@ -339,7 +412,7 @@ class DetailsViewModel @Inject constructor(
 
             _uiState.value = _uiState.value.copy(
                 isResolvingStream = false,
-                castSuccessMessage = "Download queued in background!"
+                castSuccessMessage = "Download ($preferredQuality) queued in background!"
             )
         }
     }
@@ -429,12 +502,12 @@ class DetailsViewModel @Inject constructor(
         }
     }
 
-    fun searchReleasesForMedia() {
+    fun searchReleasesForMedia(openSheet: Boolean = true) {
         val detail = _uiState.value.mediaDetail ?: return
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 isSearchingReleases = true,
-                showReleaseSheet = true,
+                showReleaseSheet = if (openSheet) true else _uiState.value.showReleaseSheet,
                 releaseSearchTitle = detail.title ?: detail.name ?: "Releases",
                 availableReleases = emptyList()
             )
@@ -463,12 +536,12 @@ class DetailsViewModel @Inject constructor(
         }
     }
 
-    fun searchReleasesForEpisode(episode: TmdbEpisodeItem) {
+    fun searchReleasesForEpisode(episode: TmdbEpisodeItem, openSheet: Boolean = true) {
         val detail = _uiState.value.mediaDetail ?: return
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 isSearchingReleases = true,
-                showReleaseSheet = true,
+                showReleaseSheet = if (openSheet) true else _uiState.value.showReleaseSheet,
                 releaseSearchTitle = "${detail.name ?: "Series"} - S${episode.seasonNumber}E${episode.episodeNumber}: ${episode.name}",
                 availableReleases = emptyList()
             )
@@ -517,7 +590,7 @@ class DetailsViewModel @Inject constructor(
                     onFailure = { error ->
                         _uiState.value = _uiState.value.copy(
                             isResolvingStream = false,
-                            errorMessage = "TorBox stream error: ${error.message}"
+                            errorMessage = "Stream error: ${error.message}"
                         )
                     }
                 )

@@ -38,7 +38,7 @@ class SearchViewModel @Inject constructor(
     private fun loadPopularSearches() {
         viewModelScope.launch {
             repository.getTrendingMovies().onSuccess { trending ->
-                val valid = trending.results.filter { !it.posterPath.isNullOrBlank() }.take(20)
+                val valid = trending.results.filter { !it.posterPath.isNullOrBlank() && it.isReleased }.take(20)
                 _uiState.update { it.copy(popularSearches = valid) }
             }
         }
@@ -83,7 +83,8 @@ class SearchViewModel @Inject constructor(
                         "TV Shows" -> items.filter { it.isTvShow }
                         else -> items
                     }
-                    _uiState.update { it.copy(results = filtered, isSearching = false) }
+                    val releasedOnly = filtered.filter { it.isReleased }
+                    _uiState.update { it.copy(results = releasedOnly, isSearching = false) }
                 },
                 onFailure = { error ->
                     _uiState.update { it.copy(isSearching = false, errorMessage = error.message) }

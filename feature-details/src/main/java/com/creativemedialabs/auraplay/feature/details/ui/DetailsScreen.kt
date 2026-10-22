@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -132,24 +133,26 @@ fun DetailsScreen(
                             )
                     )
 
-                    // Big center play button overlay
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .size(60.dp)
-                            .clip(CircleShape)
-                            .background(Color(0x88000000))
-                            .clickable {
-                                viewModel.resolveAndPlay { url -> onNavigateToPlayer(url) }
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Default.PlayArrow,
-                            contentDescription = "Play",
-                            tint = Color.White,
-                            modifier = Modifier.size(36.dp)
-                        )
+                    // Big center play button overlay (only if released)
+                    if (detail.isReleased) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .size(60.dp)
+                                .clip(CircleShape)
+                                .background(Color(0x88000000))
+                                .clickable {
+                                    viewModel.resolveAndPlay { url -> onNavigateToPlayer(url) }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.PlayArrow,
+                                contentDescription = "Play",
+                                tint = Color.White,
+                                modifier = Modifier.size(36.dp)
+                            )
+                        }
                     }
 
                     // Top Bar (Back & Cast buttons)
@@ -261,89 +264,127 @@ fun DetailsScreen(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     // 3. Primary Big Action Buttons (Netflix Style)
-                    val isMovieDownloaded = currentDownload?.downloadStatus == "COMPLETED" &&
-                        currentDownload?.localFilePath?.let { java.io.File(it).exists() && java.io.File(it).length() > 500 * 1024 } == true
-                    val isMovieDownloading = currentDownload?.downloadStatus == "DOWNLOADING"
-                    val isMovieQueued = currentDownload?.downloadStatus == "QUEUED" || currentDownload?.downloadStatus == "PREPARING" || uiState.isResolvingStream
-                    val movieDownloadProgress = currentDownload?.progressPercentage ?: 0
-
-                    // Big Solid White "Play" Button
-                    Button(
-                        onClick = {
-                            if (isMovieDownloaded && !currentDownload?.localFilePath.isNullOrBlank()) {
-                                onNavigateToPlayer(currentDownload!!.localFilePath)
-                            } else {
-                                viewModel.resolveAndPlay { url -> onNavigateToPlayer(url) }
+                    if (!detail.isReleased) {
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF1C1C1C),
+                            border = BorderStroke(1.dp, Color(0xFF333333))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.Schedule,
+                                    contentDescription = null,
+                                    tint = Color(0xFFE50914),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = "Coming Soon",
+                                        color = Color.White,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    val releaseDateStr = detail.releaseDate ?: detail.firstAirDate
+                                    Text(
+                                        text = if (!releaseDateStr.isNullOrBlank()) "Expected Release: $releaseDateStr" else "Release date to be announced",
+                                        color = Color(0xFFAAAAAA),
+                                        fontSize = 12.sp
+                                    )
+                                }
                             }
-                        },
-                        enabled = !uiState.isResolvingStream,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.White,
-                            contentColor = Color.Black
-                        ),
-                        shape = RoundedCornerShape(6.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                    ) {
-                        if (uiState.isResolvingStream) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                color = Color.Black,
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.Black)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(if (isMovieDownloaded) "Play Offline" else "Play", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                         }
-                    }
+                    } else {
+                        val isMovieDownloaded = currentDownload?.downloadStatus == "COMPLETED" &&
+                            currentDownload?.localFilePath?.let { java.io.File(it).exists() && java.io.File(it).length() > 500 * 1024 } == true
+                        val isMovieDownloading = currentDownload?.downloadStatus == "DOWNLOADING"
+                        val isMovieQueued = currentDownload?.downloadStatus == "QUEUED" || currentDownload?.downloadStatus == "PREPARING" || uiState.isResolvingStream
+                        val movieDownloadProgress = currentDownload?.progressPercentage ?: 0
 
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // Secondary Dark "Download" Button
-                    Button(
-                        onClick = {
-                            if (isMovieDownloaded && !currentDownload?.localFilePath.isNullOrBlank()) {
-                                onNavigateToPlayer(currentDownload!!.localFilePath)
-                            } else if (!isMovieDownloading && !isMovieQueued) {
-                                viewModel.startDownload(context)
+                        // Big Solid White "Play" Button
+                        Button(
+                            onClick = {
+                                if (isMovieDownloaded && !currentDownload?.localFilePath.isNullOrBlank()) {
+                                    onNavigateToPlayer(currentDownload!!.localFilePath)
+                                } else {
+                                    viewModel.resolveAndPlay { url -> onNavigateToPlayer(url) }
+                                }
+                            },
+                            enabled = !uiState.isResolvingStream,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color.White,
+                                contentColor = Color.Black
+                            ),
+                            shape = RoundedCornerShape(6.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                        ) {
+                            if (uiState.isResolvingStream) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    color = Color.Black,
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.Black)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(if (isMovieDownloaded) "Play Offline" else "Play", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                             }
-                        },
-                        enabled = !isMovieDownloading && !isMovieQueued,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isMovieDownloaded) Color(0xFF1B5E20) else Color(0xFF262626),
-                            contentColor = Color.White
-                        ),
-                        shape = RoundedCornerShape(6.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                    ) {
-                        if (isMovieDownloading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                color = Color(0xFFE50914),
-                                strokeWidth = 2.dp
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Downloading $movieDownloadProgress%", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                        } else if (isMovieQueued) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                color = Color(0xFFE50914),
-                                strokeWidth = 2.dp
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Queued...", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                        } else if (isMovieDownloaded) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF4CAF50))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Downloaded • Play Offline", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                        } else {
-                            Icon(Icons.Default.Download, contentDescription = null, tint = Color.White)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Download", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Secondary Dark "Download" Button
+                        Button(
+                            onClick = {
+                                if (isMovieDownloaded && !currentDownload?.localFilePath.isNullOrBlank()) {
+                                    onNavigateToPlayer(currentDownload!!.localFilePath)
+                                } else if (!isMovieDownloading && !isMovieQueued) {
+                                    viewModel.openDownloadSheet()
+                                }
+                            },
+                            enabled = !isMovieDownloading && !isMovieQueued,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isMovieDownloaded) Color(0xFF1B5E20) else Color(0xFF262626),
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(6.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                        ) {
+                            if (isMovieDownloading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    color = Color(0xFFE50914),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Downloading $movieDownloadProgress%", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                            } else if (isMovieQueued) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    color = Color(0xFFE50914),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Queued...", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                            } else if (isMovieDownloaded) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF4CAF50))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Downloaded • Play Offline", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                            } else {
+                                Icon(Icons.Default.Download, contentDescription = null, tint = Color.White)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Download", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                            }
                         }
                     }
 
@@ -479,6 +520,7 @@ fun DetailsScreen(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState())
                                     .padding(vertical = 8.dp),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
@@ -494,8 +536,10 @@ fun DetailsScreen(
                                             text = "Season ${season.seasonNumber}",
                                             color = Color.White,
                                             fontSize = 13.sp,
+                                            maxLines = 1,
+                                            softWrap = false,
                                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                                         )
                                     }
                                 }
@@ -639,7 +683,7 @@ fun DetailsScreen(
                                                         if (isEpDownloaded && !dbEp?.localFilePath.isNullOrBlank()) {
                                                             onNavigateToPlayer(dbEp!!.localFilePath!!)
                                                         } else if (!isEpDownloading && !isEpQueued) {
-                                                            viewModel.downloadEpisode(context, ep)
+                                                            viewModel.openDownloadSheet(ep)
                                                         }
                                                     }
                                                 ) {
@@ -811,7 +855,24 @@ fun DetailsScreen(
         )
     }
 
-
+    if (uiState.showDownloadSheet) {
+        DownloadOptionsBottomSheet(
+            title = uiState.downloadSheetTitle,
+            availableReleases = uiState.availableReleases,
+            isSearchingReleases = uiState.isSearchingReleases,
+            onDismiss = { viewModel.closeDownloadSheet() },
+            onSelectQuality = { quality ->
+                viewModel.confirmDownload(context, preferredQuality = quality)
+            },
+            onSelectRelease = { release ->
+                viewModel.confirmDownload(
+                    context = context,
+                    preferredQuality = release.quality,
+                    customVideoUrl = release.directStreamUrl ?: release.magnetUrl
+                )
+            }
+        )
+    }
 }
 
 @Composable

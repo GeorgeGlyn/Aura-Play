@@ -69,7 +69,7 @@ fun NewAndHotScreen(
                     CircularProgressIndicator(color = Color(0xFFE50914))
                 }
             } else {
-                val hotItems = (uiState.trendingItems + uiState.top10Movies).distinctBy { it.id }
+                val hotItems = (uiState.trendingItems + uiState.top10Movies).distinctBy { it.id }.filter { it.isReleased }
 
                 LazyColumn(
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),

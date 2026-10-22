@@ -1,0 +1,92 @@
+/* Aura Play - Samsung Tizen 10-Foot TV Experience */
+
+/* Focused element glow and scale */
+.focusable {
+    outline: none;
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), 
+                box-shadow 0.25s ease, 
+                border-color 0.25s ease;
+}
+
+.focusable.focused,
+.focusable:focus-visible {
+    transform: scale(1.08) !important;
+    outline: 3px solid #E50914 !important;
+    outline-offset: 3px;
+    box-shadow: 0 0 25px rgba(229, 9, 20, 0.85), 
+                0 0 50px rgba(139, 92, 246, 0.4) !important;
+    z-index: 50 !important;
+}
+
+/* Button Focus on TV */
+.btn.focused,
+.btn:focus-visible {
+    transform: scale(1.05) !important;
+    box-shadow: 0 0 30px rgba(229, 9, 20, 0.9) !important;
+    outline: 3px solid #FFFFFF !important;
+}
+
+.btn-primary.focused {
+    background: #FFFFFF !important;
+    color: #000000 !important;
+}
+
+.btn-secondary.focused {
+    background: rgba(255, 255, 255, 0.35) !important;
+    color: #FFFFFF !important;
+}
+
+/* Nav Link Focus on TV */
+.nav-link.focused {
+    background: rgba(255, 255, 255, 0.2) !important;
+    color: #FFFFFF !important;
+    transform: scale(1.05) !important;
+}
+
+/* Season Chip Focus on TV */
+.season-chip.focused {
+    background: var(--primary) !important;
+    color: #FFFFFF !important;
+    transform: scale(1.06) !important;
+    box-shadow: 0 0 20px var(--primary-glow) !important;
+}
+
+/* Episode Card Focus on TV */
+.episode-card.focused {
+    background: rgba(255, 255, 255, 0.12) !important;
+    transform: scale(1.02) !important;
+    border-color: var(--primary) !important;
+}
+
+/* TV Specific Rules when running on Tizen */
+body.tizen-tv {
+    cursor: none !important; /* Hide mouse cursor on TV */
+    overflow: hidden !important; /* TV operates strictly via D-pad scrolling */
+}
+
+body.tizen-tv .navbar {
+    height: 80px;
+    padding: 0 60px;
+}
+
+body.tizen-tv .brand-name {
+    font-size: 28px;
+}
+
+body.tizen-tv .hero-billboard {
+    height: 70vh;
+    padding: 0 60px 80px;
+}
+
+body.tizen-tv .hero-title {
+    font-size: 54px;
+}
+
+body.tizen-tv .carousel-section {
+    padding: 0 60px;
+}
+
+body.tizen-tv .media-card {
+    flex: 0 0 190px;
+    height: 285px;
+}

@@ -261,7 +261,7 @@ class PublicDomainMasterStreamProvider : StreamProvider {
         episodeNumber: Int?
     ): Result<ResolvedStream> = withContext(Dispatchers.IO) {
         // Do not return test cat video; fail gracefully so UI informs user to connect server/debrid
-        Result.failure(Exception("No active stream source found. Connect your Sonarr/Radarr server or Debrid account to stream this title."))
+        Result.failure(Exception("No active stream source found for this title."))
     }
 }
 

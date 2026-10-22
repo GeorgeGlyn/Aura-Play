@@ -1,0 +1,71 @@
+# Aura Play for Samsung Tizen TV & Web
+
+A unified 4K Cinema & TV streaming app designed for **Samsung Smart TV (Tizen OS)** with remote control D-Pad navigation, as well as **Mobile & Desktop** browsers.
+
+---
+
+## 📺 How to Install on Samsung Smart TV (Tizen OS)
+
+### Step 1: Enable Developer Mode on Your Samsung TV
+1. Turn on your Samsung TV and open the **Apps** panel from the Home menu.
+2. On the remote control, press the numeric keys in sequence: **`1` `2` `3` `4` `5`**.
+3. A **Developer Mode Configuration** popup will appear:
+   * Toggle Developer Mode to **On**.
+   * Enter your PC's local IP address (e.g., `192.168.1.50`) in the **Host PC IP** field.
+4. Long-press the **Power** button on your remote until the TV restarts to apply changes.
+
+---
+
+### Step 2: Connect PC to TV via SDB
+Ensure your PC and Samsung TV are on the **same Wi-Fi network**.
+Find your TV IP address in: **Settings > General > Network > Network Status > IP Settings**.
+
+From your computer's terminal:
+```bash
+# Connect to TV on port 26101
+sdb connect <YOUR_TV_IP>:26101
+
+# Verify the TV is listed
+sdb devices
+# Output: <YOUR_TV_IP>:26101   device   QE55Q...
+```
+
+---
+
+### Step 3: Install AuraPlay.wgt onto the TV
+
+#### Method A: Using Tizen CLI (Fastest)
+Run the following in the `aura-play-web/` directory:
+```bash
+# 1. Build the .wgt package
+npm run build:wgt
+
+# 2. Install to the connected TV
+tizen install -s <YOUR_TV_IP>:26101 -n AuraPlay.wgt
+```
+
+#### Method B: Using Samsung Tizen Studio (IDE)
+1. Open **Tizen Studio**.
+2. Go to **File > Import > Tizen > Web Projects into Workspace**.
+3. Select `d:\Aura-Play\aura-play-web`.
+4. Right-click the project > **Run As > Tizen Web Application**.
+5. Tizen Studio will automatically sign, upload, and launch Aura Play on your Samsung TV screen!
+
+---
+
+## 🎮 TV Remote Navigation Controls
+* **D-Pad (Arrows)**: Move focus between cards, buttons, tabs, and carousels.
+* **OK / Enter**: Select, open details, or start streaming.
+* **Return / Back (`10009` or `Esc`)**: Close player, close modal, or go back to Home.
+* **Play / Pause**: Toggle playback in the cinema player.
+* **Rewind / Fast Forward**: Seek 10s backward or forward.
+
+---
+
+## 💻 Running / Testing in Browser (PC / Mobile)
+You can run and test the app in any modern browser immediately:
+```bash
+cd aura-play-web
+npx serve . -l 3000
+```
+Then visit `http://localhost:3000` on your PC, or `http://<YOUR_PC_IP>:3000` from your phone or TV web browser!

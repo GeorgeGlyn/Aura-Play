@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Aura Play - 4K Cinema &amp; TV Streaming</title>
+    <link rel="icon" type="image/png" href="icon.png">
+    
+    <!-- Design & TV Stylesheets -->
+    <link rel="stylesheet" href="css/app.css">
+    <link rel="stylesheet" href="css/tv.css">
+</head>
+<body>
+
+    <!-- Top Navigation Bar -->
+    <header class="navbar" id="main-navbar">
+        <div class="nav-brand focusable" tabindex="0" onclick="App.switchTab('home')">
+            <img class="brand-icon" src="icon.png" alt="Aura Play Icon">
+            <span class="brand-name">AURA PLAY</span>
+        </div>
+        <nav class="nav-links">
+            <button class="nav-link focusable active" tabindex="0" data-tab="home">Home</button>
+            <button class="nav-link focusable" tabindex="0" data-tab="movies">Movies</button>
+            <button class="nav-link focusable" tabindex="0" data-tab="tv">TV Shows</button>
+            <button class="nav-link focusable" tabindex="0" data-tab="search">Search</button>
+            <button class="nav-link focusable" tabindex="0" data-tab="watchlist">My List</button>
+            <button class="nav-link focusable" tabindex="0" data-tab="downloads">⬇ Downloads</button>
+        </nav>
+    </header>
+
+    <!-- Main Viewport Content -->
+    <main id="app-content">
+        <!-- 1. HOME VIEW -->
+        <section id="view-home">
+            <!-- Hero Billboard -->
+            <div class="hero-billboard" id="hero-billboard">
+                <div class="hero-content">
+                    <div class="hero-badges">
+                        <span class="badge badge-match" id="hero-match">98% Match</span>
+                        <span class="badge badge-quality">4K ULTRA HD</span>
+                        <span class="badge badge-quality">ATMOS</span>
+                        <span class="badge badge-year" id="hero-year">2024</span>
+                    </div>
+                    <h1 class="hero-title" id="hero-title">Loading Featured Title...</h1>
+                    <p class="hero-overview" id="hero-overview">Enjoy infinite streaming of the world's best blockbuster movies and television series.</p>
+                    <div class="hero-actions">
+                        <button class="btn btn-primary focusable" tabindex="0" id="hero-play-btn">
+                            <span class="btn-icon">▶</span> Play Now
+                        </button>
+                        <button class="btn btn-secondary focusable" tabindex="0" id="hero-info-btn">
+                            <span class="btn-icon">ℹ</span> More Info
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dynamic Horizontal Carousels -->
+            <div class="carousel-rows" id="carousel-rows">
+                <div id="row-trending" class="carousel-section"></div>
+                <div id="row-popular-movies" class="carousel-section"></div>
+                <div id="row-top-tv" class="carousel-section"></div>
+                <div id="row-action" class="carousel-section"></div>
+                <div id="row-comedy" class="carousel-section"></div>
+            </div>
+        </section>
+
+        <!-- 2. SEARCH VIEW -->
+        <section id="view-search" class="view-container hidden">
+            <div class="search-bar-wrap">
+                <input type="text" 
+                       id="search-input" 
+                       class="search-input focusable" 
+                       tabindex="0" 
+                       placeholder="Search movies, TV shows, actors, genres..."
+                       autocomplete="off"
+                       autocorrect="off">
+            </div>
+            <div class="media-grid" id="search-results-grid">
+                <p class="search-hint">Type above to discover movies &amp; series across the Aura universe.</p>
+            </div>
+        </section>
+
+        <!-- 3. MY LIST VIEW -->
+        <section id="view-watchlist" class="view-container hidden">
+            <h2 class="carousel-title" style="margin-bottom: 24px;">My Watchlist</h2>
+            <div class="media-grid" id="watchlist-grid">
+                <p class="search-hint">Your saved list is empty.</p>
+            </div>
+        </section>
+
+        <!-- 4. DOWNLOADS VIEW -->
+        <section id="view-downloads" class="view-container hidden">
+            <h2 class="carousel-title" style="margin-bottom: 6px;">Downloads</h2>
+            <p style="color:var(--text-muted);font-size:14px;margin-bottom:28px;">Videos saved for offline viewing. Stored locally in your browser/device.</p>
+            <div class="downloads-grid" id="downloads-grid">
+                <div class="downloads-empty">
+                    <span class="downloads-empty-icon">⬇</span>
+                    <h3>No Downloads Yet</h3>
+                    <p>Open any movie or TV show and tap <strong>Download</strong> to save for offline viewing.</p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Details Modal Sheet -->
+    <div class="modal-overlay hidden" id="details-modal">
+        <div class="modal-card">
+            <div class="modal-backdrop-wrap">
+                <img class="modal-backdrop-img" id="modal-backdrop" src="" alt="Backdrop">
+                <div class="modal-backdrop-gradient"></div>
+                <button class="modal-close-btn focusable" tabindex="0" onclick="App.closeModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <h2 class="modal-title" id="modal-title">Title</h2>
+                <div class="modal-meta">
+                    <span class="badge badge-match" id="modal-match">98% Match</span>
+                    <span class="badge badge-quality">4K ULTRA HD</span>
+                    <span class="badge badge-quality">ATMOS</span>
+                    <span class="badge badge-year" id="modal-year">2024</span>
+                </div>
+                <div class="modal-genres" id="modal-genres"></div>
+                <p class="modal-overview" id="modal-overview">Overview text goes here.</p>
+                <div class="modal-actions">
+                    <button class="btn btn-primary focusable" tabindex="0" id="modal-play-btn">
+                        <span>▶</span> Play
+                    </button>
+                    <button class="btn btn-secondary btn-download focusable" tabindex="0" id="modal-download-btn">
+                        <span>⬇</span> Download
+                    </button>
+                    <button class="btn btn-secondary focusable" tabindex="0" id="modal-list-btn">
+                        <span>+ My List</span>
+                    </button>
+                </div>
+
+                <!-- TV Seasons & Episodes Section -->
+                <div class="seasons-section hidden" id="modal-seasons-section">
+                    <h3 class="seasons-title">Episodes</h3>
+                    <div class="season-chips" id="season-chips"></div>
+                    <div class="episodes-list" id="modal-episodes-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Fullscreen Cinema Player -->
+    <div class="player-container hidden" id="player-container">
+        <iframe id="player-frame" 
+                class="player-frame" 
+                allow="autoplay; fullscreen; encrypted-media; picture-in-picture" 
+                allowfullscreen>
+        </iframe>
+        <div class="player-hud" id="player-hud">
+            <button class="player-back-btn focusable" tabindex="0" id="player-back-btn" onclick="Player.close()">
+                ← Back
+            </button>
+            <div class="player-titles">
+                <div class="player-title" id="player-title">Title</div>
+                <div class="player-subtitle" id="player-subtitle">Season 1 • Episode 1</div>
+            </div>
+            <div class="player-servers">
+                <button class="server-btn focusable" tabindex="0" onclick="Player.switchServer('vidlink')">Server 1</button>
+                <button class="server-btn focusable" tabindex="0" onclick="Player.switchServer('vidsrc_cc')">Server 2</button>
+                <button class="server-btn focusable" tabindex="0" onclick="Player.switchServer('autoembed')">Server 3</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Application Logic Scripts -->
+    <script src="js/config.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/tizen-bridge.js"></script>
+    <script src="js/navigation.js"></script>
+    <script src="js/player.js"></script>
+    <script src="js/downloader.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

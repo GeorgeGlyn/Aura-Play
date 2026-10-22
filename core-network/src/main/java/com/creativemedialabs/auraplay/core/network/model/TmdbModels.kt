@@ -39,6 +39,15 @@ data class TmdbMediaItem(
     val displayReleaseYear: String?
         get() = (releaseDate ?: firstAirDate)?.take(4)
 
+    val isReleased: Boolean
+        get() {
+            if (posterPath.isNullOrBlank()) return false
+            val date = (releaseDate ?: firstAirDate)?.trim()
+            if (date.isNullOrBlank()) return false
+            val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+            return date <= today
+        }
+
     val originalLanguageName: String
         get() {
             val code = originalLanguage?.trim()?.lowercase() ?: return "English"
@@ -74,7 +83,8 @@ data class MediaDetailResponse(
     @SerializedName("spoken_languages") val spokenLanguages: List<TmdbSpokenLanguage>? = null,
     @SerializedName("number_of_seasons") val numberOfSeasons: Int? = null,
     @SerializedName("number_of_episodes") val numberOfEpisodes: Int? = null,
-    @SerializedName("seasons") val seasons: List<TmdbSeasonSummary>? = null
+    @SerializedName("seasons") val seasons: List<TmdbSeasonSummary>? = null,
+    @SerializedName("status") val status: String? = null
 ) {
     val safeGenres: List<Genre> get() = genres ?: emptyList()
     val safeSeasons: List<TmdbSeasonSummary> get() = seasons ?: emptyList()
@@ -90,6 +100,24 @@ data class MediaDetailResponse(
 
     val displayTitle: String
         get() = title ?: name ?: "Unknown"
+
+    val isReleased: Boolean
+        get() {
+            if (status != null) {
+                val s = status.lowercase()
+                if (s.contains("post production") || s.contains("in production") || s.contains("planned")) {
+                    return false
+                }
+            }
+            val date = (releaseDate ?: firstAirDate)?.trim()
+            if (date.isNullOrBlank()) {
+                return status.equals("Released", ignoreCase = true) ||
+                       status.equals("Returning Series", ignoreCase = true) ||
+                       status.equals("Ended", ignoreCase = true)
+            }
+            val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+            return date <= today
+        }
 
     val originalLanguageName: String
         get() {
@@ -139,7 +167,15 @@ data class TmdbSeasonSummary(
     @SerializedName("episode_count") val episodeCount: Int = 0,
     @SerializedName("poster_path") val posterPath: String? = null,
     @SerializedName("air_date") val airDate: String? = null
-)
+) {
+    val isAired: Boolean
+        get() {
+            val date = airDate?.trim()
+            if (date.isNullOrBlank()) return episodeCount > 0
+            val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+            return date <= today
+        }
+}
 
 data class TmdbEpisodeItem(
     @SerializedName("id") val id: Int,
@@ -151,7 +187,15 @@ data class TmdbEpisodeItem(
     @SerializedName("still_path") val stillPath: String? = null,
     @SerializedName("vote_average") val voteAverage: Double = 0.0,
     @SerializedName("runtime") val runtime: Int? = null
-)
+) {
+    val isAired: Boolean
+        get() {
+            val date = airDate?.trim()
+            if (date.isNullOrBlank()) return false
+            val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+            return date <= today
+        }
+}
 
 data class TmdbSeasonDetailResponse(
     @SerializedName("id") val id: Int? = null,

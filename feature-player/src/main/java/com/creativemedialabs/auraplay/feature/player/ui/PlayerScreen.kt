@@ -2,19 +2,23 @@ package com.creativemedialabs.auraplay.feature.player.ui
 
 import android.app.Activity
 import android.content.Context
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.graphics.Color as AndroidColor
 import android.graphics.Typeface
 import android.media.AudioManager
+import android.net.Uri
+import android.os.Build
 import android.util.Log
 import android.view.ViewGroup
-import android.net.Uri
-import android.widget.FrameLayout
+import android.view.WindowManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.FrameLayout
 import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
@@ -38,11 +42,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -51,6 +59,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
@@ -76,6 +85,45 @@ fun PlayerScreen(
     videoUrl: String,
     onBack: () -> Unit
 ) {
+    val context = LocalContext.current
+    val activity = context as? Activity
+    val window = activity?.window
+
+    // Immersive Fullscreen and Sensor Orientation lifecycle
+    DisposableEffect(Unit) {
+        val insetsController = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
+
+        // Extend video under camera notch / punch hole for true 100% full screen
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window?.attributes?.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+
+        // Keep screen awake while watching video
+        window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+        // Hide all system bars completely (status bar & nav bar) - nothing else visible!
+        insetsController?.apply {
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(WindowInsetsCompat.Type.systemBars())
+        }
+
+        // Enable sensor rotation so user can turn phone to landscape seamlessly
+        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR
+
+        onDispose {
+            // Restore normal system bars
+            insetsController?.apply {
+                systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
+                show(WindowInsetsCompat.Type.systemBars())
+            }
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+            // Return to portrait orientation
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
+    }
+
     var forceWebStream by remember(videoUrl) { mutableStateOf(false) }
 
     if (isWebStream(videoUrl) || forceWebStream) {
@@ -352,6 +400,26 @@ fun WebStreamPlayer(
                     Spacer(modifier = Modifier.width(8.dp))
                 }
 
+                val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+                IconButton(
+                    onClick = {
+                        val act = context as? Activity
+                        if (isLandscape) {
+                            act?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                        } else {
+                            act?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                        }
+                    },
+                    modifier = Modifier.background(Color(0x66000000), CircleShape)
+                ) {
+                    Icon(
+                        imageVector = if (isLandscape) Icons.Default.ScreenLockPortrait else Icons.Default.ScreenRotation,
+                        contentDescription = if (isLandscape) "Portrait" else "Landscape",
+                        tint = Color.White
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+
                 IconButton(
                     onClick = { webViewRef?.reload() },
                     modifier = Modifier.background(Color(0x66000000), CircleShape)
@@ -365,28 +433,15 @@ fun WebStreamPlayer(
             }
         }
 
-        // Persistent floating back button when top bar is hidden
+        // Tap area at top to restore controls when hidden
         if (!showOverlay) {
             Box(
                 modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .statusBarsPadding()
-                    .padding(16.dp)
-            ) {
-                IconButton(
-                    onClick = {
-                        webViewRef?.destroy()
-                        onBack()
-                    },
-                    modifier = Modifier.background(Color(0x77000000), CircleShape)
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = Color.White
-                    )
-                }
-            }
+                    .fillMaxWidth()
+                    .height(60.dp)
+                    .align(Alignment.TopCenter)
+                    .clickable { showOverlay = true }
+            )
         }
     }
 }
@@ -411,8 +466,10 @@ fun ExoPlayerStreamPlayer(
             )
             .setAllowCrossProtocolRedirects(true)
         val dataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
+        val extractorsFactory = androidx.media3.extractor.DefaultExtractorsFactory()
+            .setConstantBitrateSeekingEnabled(true)
         ExoPlayer.Builder(context)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory))
             .build()
             .apply {
                 try {
@@ -444,6 +501,7 @@ fun ExoPlayerStreamPlayer(
     var bufferingState by remember { mutableStateOf(false) }
     var isScreenLocked by remember { mutableStateOf(false) }
     var playbackSpeed by remember { mutableFloatStateOf(1.0f) }
+    var isFillScreen by remember { mutableStateOf(false) }
 
     // Gesture indicator values
     var gestureIndicatorText by remember { mutableStateOf<String?>(null) }
@@ -461,10 +519,15 @@ fun ExoPlayerStreamPlayer(
     DisposableEffect(exoPlayer) {
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
+            override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+                if (exoPlayer.duration > 0) {
+                    totalDuration = exoPlayer.duration
+                }
+            }
             override fun onPlaybackStateChanged(state: Int) {
                 bufferingState = state == Player.STATE_BUFFERING
-                if (state == Player.STATE_READY) {
-                    totalDuration = exoPlayer.duration.coerceAtLeast(1L)
+                if (exoPlayer.duration > 0) {
+                    totalDuration = exoPlayer.duration
                 }
             }
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
@@ -484,6 +547,9 @@ fun ExoPlayerStreamPlayer(
     LaunchedEffect(isPlaying) {
         while (isPlaying) {
             currentPosition = exoPlayer.currentPosition
+            if (exoPlayer.duration > 0 && totalDuration != exoPlayer.duration) {
+                totalDuration = exoPlayer.duration
+            }
             delay(1000)
         }
     }
@@ -505,11 +571,16 @@ fun ExoPlayerStreamPlayer(
                     detectTapGestures(
                         onTap = { showControls = !showControls },
                         onDoubleTap = { offset ->
+                            val maxDur = if (exoPlayer.duration > 0) exoPlayer.duration else if (totalDuration > 1000L) totalDuration else Long.MAX_VALUE
                             if (offset.x < size.width / 2) {
-                                exoPlayer.seekTo((exoPlayer.currentPosition - 10_000).coerceAtLeast(0))
+                                val target = (exoPlayer.currentPosition - 10_000).coerceAtLeast(0L)
+                                exoPlayer.seekTo(target)
+                                currentPosition = target
                                 gestureIndicatorText = "-10s Rewind"
                             } else {
-                                exoPlayer.seekTo((exoPlayer.currentPosition + 10_000).coerceAtMost(exoPlayer.duration))
+                                val target = (exoPlayer.currentPosition + 10_000).coerceAtMost(maxDur)
+                                exoPlayer.seekTo(target)
+                                currentPosition = target
                                 gestureIndicatorText = "+10s Fast Forward"
                             }
                             showControls = true
@@ -550,6 +621,7 @@ fun ExoPlayerStreamPlayer(
                 PlayerView(ctx).apply {
                     player = exoPlayer
                     useController = false
+                    resizeMode = if (isFillScreen) AspectRatioFrameLayout.RESIZE_MODE_ZOOM else AspectRatioFrameLayout.RESIZE_MODE_FIT
                     layoutParams = FrameLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
@@ -569,6 +641,9 @@ fun ExoPlayerStreamPlayer(
                         setFractionalTextSize(0.048f)
                     }
                 }
+            },
+            update = { playerView ->
+                playerView.resizeMode = if (isFillScreen) AspectRatioFrameLayout.RESIZE_MODE_ZOOM else AspectRatioFrameLayout.RESIZE_MODE_FIT
             },
             modifier = Modifier.fillMaxSize()
         )
@@ -614,11 +689,14 @@ fun ExoPlayerStreamPlayer(
 
         // Full Netflix Overlay Controls (when not locked)
         if (showControls && !isScreenLocked) {
+            val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
             PlayerControlsOverlay(
                 isPlaying = isPlaying,
                 currentPosition = currentPosition,
                 totalDuration = totalDuration,
                 playbackSpeed = playbackSpeed,
+                isLandscape = isLandscape,
+                isFillScreen = isFillScreen,
                 onBack = {
                     exoPlayer.release()
                     onBack()
@@ -628,8 +706,10 @@ fun ExoPlayerStreamPlayer(
                     isPlaying = !isPlaying
                 },
                 onSeekRelative = { deltaMs ->
-                    exoPlayer.seekTo((exoPlayer.currentPosition + deltaMs).coerceIn(0, exoPlayer.duration))
-                    currentPosition = exoPlayer.currentPosition
+                    val maxDur = if (exoPlayer.duration > 0) exoPlayer.duration else if (totalDuration > 1000L) totalDuration else Long.MAX_VALUE
+                    val target = (exoPlayer.currentPosition + deltaMs).coerceIn(0L, maxDur)
+                    exoPlayer.seekTo(target)
+                    currentPosition = target
                 },
                 onLockScreen = { isScreenLocked = true },
                 onToggleSpeed = {
@@ -643,10 +723,25 @@ fun ExoPlayerStreamPlayer(
                     exoPlayer.setPlaybackSpeed(nextSpeed)
                     gestureIndicatorText = "Speed: ${nextSpeed}x"
                 },
+                onToggleOrientation = {
+                    if (isLandscape) {
+                        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                    } else {
+                        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                    }
+                },
+                onToggleFillScreen = {
+                    isFillScreen = !isFillScreen
+                    gestureIndicatorText = if (isFillScreen) "Screen Fill (Zoom)" else "Original Ratio (Fit)"
+                },
                 onTracksClicked = { showTrackDialog = true },
                 onSeek = { fraction ->
-                    exoPlayer.seekTo((fraction * totalDuration).toLong())
-                    currentPosition = exoPlayer.currentPosition
+                    val durToUse = if (exoPlayer.duration > 0) exoPlayer.duration else if (totalDuration > 1000L) totalDuration else 0L
+                    if (durToUse > 0) {
+                        val target = (fraction * durToUse).toLong()
+                        exoPlayer.seekTo(target)
+                        currentPosition = target
+                    }
                 }
             )
         }
@@ -666,11 +761,15 @@ private fun BoxScope.PlayerControlsOverlay(
     currentPosition: Long,
     totalDuration: Long,
     playbackSpeed: Float,
+    isLandscape: Boolean,
+    isFillScreen: Boolean,
     onBack: () -> Unit,
     onPlayPause: () -> Unit,
     onSeekRelative: (Long) -> Unit,
     onLockScreen: () -> Unit,
     onToggleSpeed: () -> Unit,
+    onToggleOrientation: () -> Unit,
+    onToggleFillScreen: () -> Unit,
     onTracksClicked: () -> Unit,
     onSeek: (Float) -> Unit
 ) {
@@ -681,7 +780,7 @@ private fun BoxScope.PlayerControlsOverlay(
             .background(Color(0x77000000))
     )
 
-    // Top Bar (Back button, Title, Lock & Audio/Subtitle icons)
+    // Top Bar (Back button, Title, Orientation, Lock & Audio/Subtitle icons)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -703,6 +802,13 @@ private fun BoxScope.PlayerControlsOverlay(
         )
 
         Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onToggleOrientation) {
+                Icon(
+                    imageVector = if (isLandscape) Icons.Default.ScreenLockPortrait else Icons.Default.ScreenRotation,
+                    contentDescription = if (isLandscape) "Switch to Portrait" else "Switch to Landscape",
+                    tint = Color.White
+                )
+            }
             IconButton(onClick = onLockScreen) {
                 Icon(Icons.Default.LockOpen, contentDescription = "Lock", tint = Color.White)
             }
@@ -763,8 +869,8 @@ private fun BoxScope.PlayerControlsOverlay(
             .padding(horizontal = 20.dp, vertical = 12.dp)
     ) {
         // Scrubber line
-        val progress = if (totalDuration > 0) currentPosition.toFloat() / totalDuration else 0f
-        val timeRemaining = (totalDuration - currentPosition).coerceAtLeast(0)
+        val progress = if (totalDuration > 1000L) (currentPosition.toFloat() / totalDuration).coerceIn(0f, 1f) else 0f
+        val timeRemaining = if (totalDuration > 1000L) (totalDuration - currentPosition).coerceAtLeast(0) else 0L
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -779,17 +885,20 @@ private fun BoxScope.PlayerControlsOverlay(
             Slider(
                 value = progress,
                 onValueChange = onSeek,
+                enabled = totalDuration > 1000L,
                 modifier = Modifier
                     .weight(1f)
                     .padding(horizontal = 8.dp),
                 colors = SliderDefaults.colors(
                     thumbColor = Color(0xFFE50914),
                     activeTrackColor = Color(0xFFE50914),
-                    inactiveTrackColor = Color(0x66FFFFFF)
+                    inactiveTrackColor = Color(0x66FFFFFF),
+                    disabledThumbColor = Color.DarkGray,
+                    disabledActiveTrackColor = Color.DarkGray
                 )
             )
             Text(
-                text = "-${formatTime(timeRemaining)}",
+                text = if (totalDuration > 1000L) "-${formatTime(timeRemaining)}" else "--:--",
                 color = Color.White,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium
@@ -804,19 +913,50 @@ private fun BoxScope.PlayerControlsOverlay(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Speed controller button
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = Color(0x33FFFFFF),
-                modifier = Modifier.clickable { onToggleSpeed() }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(
-                    text = "Speed (${playbackSpeed}x)",
-                    color = Color.White,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                )
+                // Speed controller button
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = Color(0x33FFFFFF),
+                    modifier = Modifier.clickable { onToggleSpeed() }
+                ) {
+                    Text(
+                        text = "Speed (${playbackSpeed}x)",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                    )
+                }
+
+                // Fill vs Fit aspect ratio toggle
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = if (isFillScreen) Color(0xFFE50914) else Color(0x33FFFFFF),
+                    modifier = Modifier.clickable { onToggleFillScreen() }
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isFillScreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = if (isFillScreen) "Fill" else "Fit",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
             }
 
             // Audio & Subtitles button
