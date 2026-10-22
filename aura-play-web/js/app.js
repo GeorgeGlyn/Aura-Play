@@ -88,49 +88,60 @@ const App = {
         }
     },
 
-    async loadHome() {
+    loadHome() {
         try {
-            const trending = await TMDB.getTrendingAll();
-            if (trending.length > 0) {
-                this.setHero(trending[0]);
-                this.renderRow("row-trending", "Trending Now", trending);
-            }
+            // Load trending & hero immediately so Samsung TV displays content in milliseconds
+            TMDB.getTrendingAll().then(trending => {
+                if (trending && trending.length > 0) {
+                    this.setHero(trending[0]);
+                    this.renderRow("row-trending", "Trending Now", trending);
+                }
+            });
 
-            const popularMovies = await TMDB.getPopularMovies();
-            this.renderRow("row-popular-movies", "Blockbuster Movies", popularMovies);
+            TMDB.getPopularMovies().then(popularMovies => {
+                if (popularMovies) this.renderRow("row-popular-movies", "Blockbuster Movies", popularMovies);
+            });
 
-            const topTv = await TMDB.getTopRatedTV();
-            this.renderRow("row-top-tv", "Critically Acclaimed TV Shows", topTv);
+            TMDB.getTopRatedTV().then(topTv => {
+                if (topTv) this.renderRow("row-top-tv", "Critically Acclaimed TV Shows", topTv);
+            });
 
-            const actionMovies = await TMDB.getMoviesByGenre(28); // 28 = Action
-            this.renderRow("row-action", "Action & Thrillers", actionMovies);
+            TMDB.getMoviesByGenre(28).then(actionMovies => {
+                if (actionMovies) this.renderRow("row-action", "Action & Thrillers", actionMovies);
+            });
 
-            const comedyMovies = await TMDB.getMoviesByGenre(35); // 35 = Comedy
-            this.renderRow("row-comedy", "Top Comedies", comedyMovies);
+            TMDB.getMoviesByGenre(35).then(comedyMovies => {
+                if (comedyMovies) this.renderRow("row-comedy", "Top Comedies", comedyMovies);
+            });
         } catch (err) {
             console.error("Failed to load home content:", err);
         }
     },
 
-    async loadMoviesTab() {
-        const popular = await TMDB.getPopularMovies();
-        if (popular.length > 0) this.setHero(popular[0]);
-        this.renderRow("row-trending", "Popular Movies", popular);
+    loadMoviesTab() {
+        TMDB.getPopularMovies().then(popular => {
+            if (popular && popular.length > 0) this.setHero(popular[0]);
+            this.renderRow("row-trending", "Popular Movies", popular || []);
+        });
 
-        const topRated = await TMDB.getTopRatedMovies();
-        this.renderRow("row-popular-movies", "Top Rated Cinema", topRated);
+        TMDB.getTopRatedMovies().then(topRated => {
+            if (topRated) this.renderRow("row-popular-movies", "Top Rated Cinema", topRated);
+        });
 
-        const sciFi = await TMDB.getMoviesByGenre(878); // Sci-Fi
-        this.renderRow("row-top-tv", "Sci-Fi & Fantasy", sciFi);
+        TMDB.getMoviesByGenre(878).then(sciFi => {
+            if (sciFi) this.renderRow("row-top-tv", "Sci-Fi & Fantasy", sciFi);
+        });
     },
 
-    async loadTvTab() {
-        const popularTv = await TMDB.getPopularTV();
-        if (popularTv.length > 0) this.setHero(popularTv[0]);
-        this.renderRow("row-trending", "Binge-Worthy TV Series", popularTv);
+    loadTvTab() {
+        TMDB.getPopularTV().then(popularTv => {
+            if (popularTv && popularTv.length > 0) this.setHero(popularTv[0]);
+            this.renderRow("row-trending", "Binge-Worthy TV Series", popularTv || []);
+        });
 
-        const topTv = await TMDB.getTopRatedTV();
-        this.renderRow("row-popular-movies", "Top Rated Series", topTv);
+        TMDB.getTopRatedTV().then(topTv => {
+            if (topTv) this.renderRow("row-popular-movies", "Top Rated Series", topTv);
+        });
     },
 
     setHero(media) {

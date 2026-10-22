@@ -27,7 +27,7 @@ const TMDB = {
 
     getBackdropUrl(path) {
         if (!path) return "";
-        return `${CONFIG.TMDB_IMAGE_ORIGINAL}${path}`;
+        return `${CONFIG.TMDB_IMAGE_W780}${path}`;
     },
 
     async getTrendingAll() {
