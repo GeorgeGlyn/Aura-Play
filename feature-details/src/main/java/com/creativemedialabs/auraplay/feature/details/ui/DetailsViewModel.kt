@@ -5,6 +5,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.work.Data
+import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.creativemedialabs.auraplay.core.database.dao.DownloadDao
@@ -325,9 +326,15 @@ class DetailsViewModel @Inject constructor(
 
             val downloadWork = OneTimeWorkRequestBuilder<MediaDownloadWorker>()
                 .setInputData(inputData)
+                .addTag("download_$uniqueEpId")
+                .addTag("media_download")
                 .build()
 
-            WorkManager.getInstance(context).enqueue(downloadWork)
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                "download_$uniqueEpId",
+                ExistingWorkPolicy.REPLACE,
+                downloadWork
+            )
 
             _uiState.value = _uiState.value.copy(
                 isResolvingStream = false,
@@ -406,9 +413,15 @@ class DetailsViewModel @Inject constructor(
 
             val downloadWork = OneTimeWorkRequestBuilder<MediaDownloadWorker>()
                 .setInputData(inputData)
+                .addTag("download_$mediaId")
+                .addTag("media_download")
                 .build()
 
-            WorkManager.getInstance(context).enqueue(downloadWork)
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                "download_$mediaId",
+                ExistingWorkPolicy.REPLACE,
+                downloadWork
+            )
 
             _uiState.value = _uiState.value.copy(
                 isResolvingStream = false,

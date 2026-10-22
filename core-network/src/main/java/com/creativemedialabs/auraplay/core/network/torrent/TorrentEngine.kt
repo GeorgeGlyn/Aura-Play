@@ -107,6 +107,7 @@ class TorrentEngine @Inject constructor() {
         magnetUri: String,
         saveDir: File,
         timeoutMinutes: Long = 120,
+        isCancelled: () -> Boolean = { false },
         onProgress: suspend (TorrentDownloadProgress) -> Unit
     ): Result<File> = withContext(Dispatchers.IO) {
         start()
@@ -123,6 +124,10 @@ class TorrentEngine @Inject constructor() {
             val metadataBytes = sm.fetchMagnet(magnetUri, 45, tmpDir)
             if (metadataBytes == null) {
                 return@withContext Result.failure(Exception("Failed to retrieve torrent metadata from DHT / trackers. Check internet connection or peer availability."))
+            }
+
+            if (isCancelled()) {
+                return@withContext Result.failure(Exception("Torrent download stopped by user"))
             }
 
             val torrentInfo = TorrentInfo.bdecode(metadataBytes)
@@ -160,6 +165,19 @@ class TorrentEngine @Inject constructor() {
             var targetFile: File? = null
 
             while (System.currentTimeMillis() - startTime < maxDuration) {
+                if (isCancelled()) {
+                    Log.d(tag, "Torrent download cancelled by user.")
+                    val activeHandle = handle ?: sm.find(torrentInfo.infoHashV1())
+                    if (activeHandle != null) {
+                        try {
+                            sm.remove(activeHandle)
+                        } catch (e: Exception) {
+                            // ignore
+                        }
+                    }
+                    return@withContext Result.failure(Exception("Torrent download stopped by user"))
+                }
+
                 val activeHandle = handle ?: sm.find(torrentInfo.infoHashV1())
                 if (activeHandle != null && activeHandle.isValid) {
                     val status = activeHandle.status()

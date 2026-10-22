@@ -64,6 +64,12 @@ class MediaDownloadWorker @AssistedInject constructor(
         }
     }
 
+    private suspend fun isDownloadCancelled(mediaId: Int): Boolean {
+        if (isStopped) return true
+        val entity = downloadDao.getDownload(mediaId)
+        return entity == null || entity.downloadStatus == "STOPPED" || entity.downloadStatus == "PAUSED"
+    }
+
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val mediaId = inputData.getInt(KEY_MEDIA_ID, -1)
         var videoUrl = inputData.getString(KEY_VIDEO_URL) ?: "RESOLVE"
@@ -77,6 +83,12 @@ class MediaDownloadWorker @AssistedInject constructor(
         val preferredQuality = inputData.getString(KEY_PREFERRED_QUALITY) ?: "1080p"
 
         if (mediaId == -1) return@withContext Result.failure()
+
+        if (isDownloadCancelled(mediaId)) {
+            Log.d(TAG, "Download $mediaId was cancelled before starting.")
+            DownloadNotificationHelper.cancelNotification(applicationContext, mediaId)
+            return@withContext Result.failure()
+        }
 
         try {
             setForeground(getForegroundInfo())
@@ -213,7 +225,9 @@ class MediaDownloadWorker @AssistedInject constructor(
             val res = torrentEngine.downloadMagnet(
                 magnetUri = videoUrl,
                 saveDir = saveFolder,
+                isCancelled = { isStopped || kotlinx.coroutines.runBlocking { isDownloadCancelled(mediaId) } },
                 onProgress = { p ->
+                    if (isDownloadCancelled(mediaId)) return@downloadMagnet
                     val speedFormatted = formatSpeed(p.downloadRateBytesPerSec)
                     setProgressAsync(
                         workDataOf(
@@ -242,13 +256,21 @@ class MediaDownloadWorker @AssistedInject constructor(
                 }
             )
 
+            if (isDownloadCancelled(mediaId)) {
+                Log.d(TAG, "Torrent download $mediaId was cancelled by user.")
+                DownloadNotificationHelper.cancelNotification(applicationContext, mediaId)
+                return@withContext Result.failure()
+            }
+
             if (res.isSuccess) {
                 val target = res.getOrThrow()
                 markCompleted(mediaId, mediaType, title, posterPath, target, seriesId, seasonNumber, episodeNumber)
                 return@withContext Result.success(Data.Builder().putString("filePath", target.absolutePath).build())
             } else {
                 Log.e(TAG, "Native torrent download failed: ${res.exceptionOrNull()?.message}")
-                markFailed(mediaId, mediaType, title, posterPath, seriesId, seasonNumber, episodeNumber)
+                if (!isDownloadCancelled(mediaId)) {
+                    markFailed(mediaId, mediaType, title, posterPath, seriesId, seasonNumber, episodeNumber)
+                }
                 return@withContext Result.failure()
             }
         }
@@ -277,11 +299,18 @@ class MediaDownloadWorker @AssistedInject constructor(
                     referer = referer,
                     userAgent = userAgent
                 )
+                if (isDownloadCancelled(mediaId)) {
+                    Log.d(TAG, "HLS download was cancelled by user for $mediaId")
+                    DownloadNotificationHelper.cancelNotification(applicationContext, mediaId)
+                    return@withContext Result.failure()
+                }
                 if (hlsSuccess && outputFile.exists() && outputFile.length() > 0) {
                     markCompleted(mediaId, mediaType, title, posterPath, outputFile, seriesId, seasonNumber, episodeNumber, episodeName)
                     return@withContext Result.success(Data.Builder().putString("filePath", outputFile.absolutePath).build())
                 } else {
-                    markFailed(mediaId, mediaType, title, posterPath, seriesId, seasonNumber, episodeNumber, episodeName)
+                    if (!isDownloadCancelled(mediaId)) {
+                        markFailed(mediaId, mediaType, title, posterPath, seriesId, seasonNumber, episodeNumber, episodeName)
+                    }
                     return@withContext Result.failure()
                 }
             }
@@ -307,7 +336,9 @@ class MediaDownloadWorker @AssistedInject constructor(
             }
 
             if (!response.isSuccessful) {
-                markFailed(mediaId, mediaType, title, posterPath, seriesId, seasonNumber, episodeNumber)
+                if (!isDownloadCancelled(mediaId)) {
+                    markFailed(mediaId, mediaType, title, posterPath, seriesId, seasonNumber, episodeNumber)
+                }
                 return@withContext Result.failure()
             }
 
@@ -315,12 +346,16 @@ class MediaDownloadWorker @AssistedInject constructor(
             if (contentType.contains("text/html") || contentType.contains("text/plain")) {
                 Log.e(TAG, "Server returned HTML instead of video content ($contentType)")
                 outputFile.delete()
-                markFailed(mediaId, mediaType, title, posterPath, seriesId, seasonNumber, episodeNumber)
+                if (!isDownloadCancelled(mediaId)) {
+                    markFailed(mediaId, mediaType, title, posterPath, seriesId, seasonNumber, episodeNumber)
+                }
                 return@withContext Result.failure()
             }
 
             val body = response.body ?: run {
-                markFailed(mediaId, mediaType, title, posterPath, seriesId, seasonNumber, episodeNumber)
+                if (!isDownloadCancelled(mediaId)) {
+                    markFailed(mediaId, mediaType, title, posterPath, seriesId, seasonNumber, episodeNumber)
+                }
                 return@withContext Result.failure()
             }
 
@@ -340,8 +375,10 @@ class MediaDownloadWorker @AssistedInject constructor(
                     val buffer = ByteArray(16 * 1024)
                     var bytesRead: Int
                     while (input.read(buffer).also { bytesRead = it } != -1) {
-                        if (isStopped) {
-                            throw Exception("Worker stopped by system")
+                        if (isDownloadCancelled(mediaId)) {
+                            Log.d(TAG, "Direct download cancelled by user for $mediaId")
+                            DownloadNotificationHelper.cancelNotification(applicationContext, mediaId)
+                            return@withContext Result.failure()
                         }
                         output.write(buffer, 0, bytesRead)
                         downloadedBytes += bytesRead
@@ -402,16 +439,29 @@ class MediaDownloadWorker @AssistedInject constructor(
                 }
             }
 
+            if (isDownloadCancelled(mediaId)) {
+                Log.d(TAG, "Download $mediaId was cancelled by user, skipping completion")
+                DownloadNotificationHelper.cancelNotification(applicationContext, mediaId)
+                return@withContext Result.failure()
+            }
+
             if (outputFile.exists() && outputFile.length() > 500 * 1024) {
                 markCompleted(mediaId, mediaType, title, posterPath, outputFile, seriesId, seasonNumber, episodeNumber, episodeName)
                 Result.success(Data.Builder().putString("filePath", outputFile.absolutePath).build())
             } else {
                 outputFile.delete()
-                markFailed(mediaId, mediaType, title, posterPath, seriesId, seasonNumber, episodeNumber, episodeName)
+                if (!isDownloadCancelled(mediaId)) {
+                    markFailed(mediaId, mediaType, title, posterPath, seriesId, seasonNumber, episodeNumber, episodeName)
+                }
                 Result.failure()
             }
         } catch (e: Exception) {
             Log.e(TAG, "Download failed for $title", e)
+            if (isDownloadCancelled(mediaId)) {
+                Log.d(TAG, "Download $mediaId was cancelled by user, skipping markFailed")
+                DownloadNotificationHelper.cancelNotification(applicationContext, mediaId)
+                return@withContext Result.failure()
+            }
             if (outputFile.exists() && outputFile.length() < 500 * 1024) {
                 outputFile.delete()
             }
@@ -481,6 +531,10 @@ class MediaDownloadWorker @AssistedInject constructor(
         episodeNumber: Int,
         episodeName: String? = null
     ) {
+        if (isDownloadCancelled(mediaId)) {
+            Log.d(TAG, "Download $mediaId was cancelled by user, skipping markFailed")
+            return
+        }
         val cleanEp = if (!episodeName.isNullOrBlank() && !episodeName.equals(title, ignoreCase = true)) {
             " - $episodeName"
         } else ""
@@ -643,8 +697,9 @@ class MediaDownloadWorker @AssistedInject constructor(
         }
 
         for ((segUrl, segFile) in segmentsToDownload) {
-            if (isStopped) {
-                throw Exception("Worker stopped by system")
+            if (isDownloadCancelled(mediaId)) {
+                Log.d(TAG, "HLS download cancelled by user for $mediaId")
+                return false
             }
 
             if (segFile.exists() && segFile.length() > 0) {
@@ -654,7 +709,7 @@ class MediaDownloadWorker @AssistedInject constructor(
                 var attempts = 0
                 while (!downloadSuccess && attempts < 3) {
                     attempts++
-                    if (isStopped) break
+                    if (isDownloadCancelled(mediaId)) return false
                     try {
                         val segReq = Request.Builder()
                             .url(segUrl)

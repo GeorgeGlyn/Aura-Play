@@ -30,6 +30,7 @@ data class EpisodeUiDetails(
 
 @HiltViewModel
 class DownloadsViewModel @Inject constructor(
+    @dagger.hilt.android.qualifiers.ApplicationContext private val context: Context,
     private val downloadDao: DownloadDao,
     private val monitoredSeriesDao: MonitoredSeriesDao,
     private val episodeDao: EpisodeDao,
@@ -145,8 +146,34 @@ class DownloadsViewModel @Inject constructor(
         }
     }
 
+    fun stopDownload(download: DownloadEntity) {
+        viewModelScope.launch {
+            val wm = androidx.work.WorkManager.getInstance(context)
+            wm.cancelUniqueWork("download_${download.mediaId}")
+            wm.cancelAllWorkByTag("download_${download.mediaId}")
+
+            com.creativemedialabs.auraplay.feature.downloads.notification.DownloadNotificationHelper.cancelNotification(context, download.mediaId)
+
+            downloadDao.updateProgress(download.mediaId, "STOPPED", download.progressPercentage)
+            if (download.localFilePath.isNotBlank()) {
+                episodeDao.updateDownloadStatusByPath(download.localFilePath, "STOPPED")
+            }
+        }
+    }
+
     fun deleteDownload(download: DownloadEntity) {
         viewModelScope.launch {
+            val wm = androidx.work.WorkManager.getInstance(context)
+            wm.cancelUniqueWork("download_${download.mediaId}")
+            wm.cancelAllWorkByTag("download_${download.mediaId}")
+
+            com.creativemedialabs.auraplay.feature.downloads.notification.DownloadNotificationHelper.cancelNotification(context, download.mediaId)
+
+            if (download.localFilePath.isNotBlank()) {
+                episodeDao.updateDownloadStatusByPath(download.localFilePath, "STOPPED")
+            }
+            downloadDao.deleteDownload(download.mediaId)
+
             try {
                 if (download.localFilePath.isNotBlank()) {
                     val file = File(download.localFilePath)
@@ -161,16 +188,23 @@ class DownloadsViewModel @Inject constructor(
             } catch (e: Exception) {
                 // Ignore file deletion error
             }
-            downloadDao.deleteDownload(download.mediaId)
-            if (download.localFilePath.isNotBlank()) {
-                episodeDao.updateDownloadStatusByPath(download.localFilePath, "MISSING")
-            }
         }
     }
 
     fun deleteFolder(downloadsInFolder: List<DownloadEntity>) {
         viewModelScope.launch {
+            val wm = androidx.work.WorkManager.getInstance(context)
             downloadsInFolder.forEach { download ->
+                wm.cancelUniqueWork("download_${download.mediaId}")
+                wm.cancelAllWorkByTag("download_${download.mediaId}")
+
+                com.creativemedialabs.auraplay.feature.downloads.notification.DownloadNotificationHelper.cancelNotification(context, download.mediaId)
+
+                if (download.localFilePath.isNotBlank()) {
+                    episodeDao.updateDownloadStatusByPath(download.localFilePath, "STOPPED")
+                }
+                downloadDao.deleteDownload(download.mediaId)
+
                 try {
                     if (download.localFilePath.isNotBlank()) {
                         val file = File(download.localFilePath)
@@ -191,10 +225,6 @@ class DownloadsViewModel @Inject constructor(
                 } catch (e: Exception) {
                     // Ignore file deletion error
                 }
-                downloadDao.deleteDownload(download.mediaId)
-                if (download.localFilePath.isNotBlank()) {
-                    episodeDao.updateDownloadStatusByPath(download.localFilePath, "MISSING")
-                }
             }
         }
     }
@@ -205,6 +235,10 @@ class DownloadsViewModel @Inject constructor(
             if (existing != null) {
                 deleteDownload(existing)
             } else {
+                val wm = androidx.work.WorkManager.getInstance(context)
+                wm.cancelUniqueWork("download_$mediaId")
+                wm.cancelAllWorkByTag("download_$mediaId")
+                com.creativemedialabs.auraplay.feature.downloads.notification.DownloadNotificationHelper.cancelNotification(context, mediaId)
                 downloadDao.deleteDownload(mediaId)
             }
         }
@@ -233,9 +267,15 @@ class DownloadsViewModel @Inject constructor(
 
             val downloadWork = androidx.work.OneTimeWorkRequestBuilder<com.creativemedialabs.auraplay.feature.downloads.worker.MediaDownloadWorker>()
                 .setInputData(inputData)
+                .addTag("download_${download.mediaId}")
+                .addTag("media_download")
                 .build()
 
-            androidx.work.WorkManager.getInstance(context).enqueue(downloadWork)
+            androidx.work.WorkManager.getInstance(context).enqueueUniqueWork(
+                "download_${download.mediaId}",
+                androidx.work.ExistingWorkPolicy.REPLACE,
+                downloadWork
+            )
         }
     }
 }

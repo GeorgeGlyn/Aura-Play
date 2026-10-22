@@ -115,6 +115,9 @@ class SeriesMonitorWorker @AssistedInject constructor(
                             existingEp?.downloadStatus == "DOWNLOADED" -> "DOWNLOADED"
                             existingEp?.downloadStatus == "DOWNLOADING" -> "DOWNLOADING"
                             existingEp?.downloadStatus == "QUEUED" -> "QUEUED"
+                            existingEp?.downloadStatus == "STOPPED" -> "STOPPED"
+                            existingEp?.downloadStatus == "PAUSED" -> "PAUSED"
+                            existingEp?.downloadStatus == "CANCELLED" -> "CANCELLED"
                             hasAired -> "MISSING"
                             else -> "UNAIRED"
                         }
@@ -191,9 +194,15 @@ class SeriesMonitorWorker @AssistedInject constructor(
 
                 val downloadWork = OneTimeWorkRequestBuilder<MediaDownloadWorker>()
                     .setInputData(inputData)
+                    .addTag("download_$uniqueEpMediaId")
+                    .addTag("media_download")
                     .build()
 
-                WorkManager.getInstance(context).enqueue(downloadWork)
+                WorkManager.getInstance(context).enqueueUniqueWork(
+                    "download_$uniqueEpMediaId",
+                    ExistingWorkPolicy.KEEP,
+                    downloadWork
+                )
 
                 episodeDao.updateDownloadStatus(
                     seriesId = seriesId,

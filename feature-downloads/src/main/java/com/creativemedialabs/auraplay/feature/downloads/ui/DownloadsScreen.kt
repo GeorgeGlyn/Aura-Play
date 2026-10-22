@@ -207,6 +207,7 @@ fun DownloadsScreen(
                                     },
                                     onPlayEpisode = { localPath -> onPlayDownload(localPath) },
                                     onDeleteEpisode = { ep -> viewModel.deleteDownload(ep) },
+                                    onStopEpisode = { ep -> viewModel.stopDownload(ep) },
                                     onDeleteFolder = { folderToDelete = group },
                                     onRetryEpisode = { ep -> viewModel.retryDownload(context, ep) }
                                 )
@@ -215,6 +216,7 @@ fun DownloadsScreen(
                                     group = group,
                                     onPlay = { onPlayDownload(group.items.first().localFilePath) },
                                     onDelete = { viewModel.deleteDownload(group.items.first()) },
+                                    onStop = { viewModel.stopDownload(group.items.first()) },
                                     onRetry = { viewModel.retryDownload(context, group.items.first()) }
                                 )
                             }
@@ -608,6 +610,7 @@ private fun SeriesFolderCard(
     onToggleExpand: () -> Unit,
     onPlayEpisode: (String) -> Unit,
     onDeleteEpisode: (DownloadEntity) -> Unit,
+    onStopEpisode: (DownloadEntity) -> Unit = {},
     onDeleteFolder: () -> Unit,
     onRetryEpisode: (DownloadEntity) -> Unit
 ) {
@@ -904,6 +907,7 @@ private fun SeriesFolderCard(
                                             episodeDetails = episodeMetadataMap[episode.mediaId],
                                             onPlay = { onPlayEpisode(episode.localFilePath) },
                                             onDelete = { onDeleteEpisode(episode) },
+                                            onStop = { onStopEpisode(episode) },
                                             onRetry = { onRetryEpisode(episode) }
                                         )
                                     }
@@ -924,6 +928,7 @@ private fun EpisodeDownloadRow(
     episodeDetails: EpisodeUiDetails?,
     onPlay: () -> Unit,
     onDelete: () -> Unit,
+    onStop: () -> Unit = {},
     onRetry: () -> Unit = {}
 ) {
     val fileSizeBytes = remember(download.localFilePath) { getDownloadFileSize(download) }
@@ -931,6 +936,10 @@ private fun EpisodeDownloadRow(
     val fileExists = localFile.exists()
     val isCompleted = download.downloadStatus == "COMPLETED"
     val isDownloading = download.downloadStatus == "DOWNLOADING"
+    val isQueuedOrPreparing = download.downloadStatus == "QUEUED" || download.downloadStatus == "PREPARING"
+    val isPausedOrStopped = download.downloadStatus == "STOPPED" || download.downloadStatus == "PAUSED"
+    val isFailed = download.downloadStatus.startsWith("FAILED")
+    val isActive = isDownloading || isQueuedOrPreparing
     val isCorruptOrMissing = isCompleted && (!fileExists || fileSizeBytes < 100 * 1024)
     val epInfo = remember(download.title, seriesTitle) { parseEpisodeMetadata(download, seriesTitle) }
 
@@ -1087,7 +1096,7 @@ private fun EpisodeDownloadRow(
                         color = Color(0xFFE50914),
                         trackColor = Color(0xFF333333)
                     )
-                } else if (download.downloadStatus == "QUEUED" || download.downloadStatus == "PREPARING") {
+                } else if (isQueuedOrPreparing) {
                     Text(
                         text = "${epInfo.episodeCode} • Queued • Resolving...",
                         color = Color(0xFFE50914),
@@ -1099,7 +1108,7 @@ private fun EpisodeDownloadRow(
                         color = Color(0xFFFF9800),
                         fontSize = 11.sp
                     )
-                } else if (download.downloadStatus.startsWith("FAILED")) {
+                } else if (isPausedOrStopped || isFailed) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
@@ -1125,7 +1134,7 @@ private fun EpisodeDownloadRow(
 
             Spacer(modifier = Modifier.width(8.dp))
 
-            // Play button or Resume button
+            // Play button, Pause button, or Resume button
             if (isCompleted && !isCorruptOrMissing) {
                 IconButton(
                     onClick = onPlay,
@@ -1141,7 +1150,22 @@ private fun EpisodeDownloadRow(
                         modifier = Modifier.size(18.dp)
                     )
                 }
-            } else if (download.downloadStatus.startsWith("FAILED")) {
+            } else if (isActive) {
+                IconButton(
+                    onClick = onStop,
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF262626))
+                ) {
+                    Icon(
+                        Icons.Default.Pause,
+                        contentDescription = "Stop Download",
+                        tint = Color(0xFFE50914),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            } else if (isPausedOrStopped || isFailed) {
                 IconButton(
                     onClick = onRetry,
                     modifier = Modifier
@@ -1179,6 +1203,7 @@ private fun MovieDownloadCard(
     group: DownloadGroup,
     onPlay: () -> Unit,
     onDelete: () -> Unit,
+    onStop: () -> Unit = {},
     onRetry: () -> Unit
 ) {
     val download = group.items.first()
@@ -1186,6 +1211,7 @@ private fun MovieDownloadCard(
         download = download,
         onPlay = onPlay,
         onDelete = onDelete,
+        onStop = onStop,
         onRetry = onRetry
     )
 }
@@ -1197,6 +1223,7 @@ private fun DownloadItem(
     download: DownloadEntity,
     onPlay: () -> Unit,
     onDelete: () -> Unit,
+    onStop: () -> Unit = {},
     onRetry: () -> Unit = {}
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -1211,6 +1238,10 @@ private fun DownloadItem(
     } else 0L
     val isCompleted = download.downloadStatus == "COMPLETED"
     val isDownloading = download.downloadStatus == "DOWNLOADING"
+    val isQueuedOrPreparing = download.downloadStatus == "QUEUED" || download.downloadStatus == "PREPARING"
+    val isPausedOrStopped = download.downloadStatus == "STOPPED" || download.downloadStatus == "PAUSED"
+    val isFailed = download.downloadStatus.startsWith("FAILED")
+    val isActive = isDownloading || isQueuedOrPreparing
     val isCorruptOrMissing = isCompleted && (!fileExists || fileSizeBytes < 100 * 1024)
 
     Card(
@@ -1299,8 +1330,8 @@ private fun DownloadItem(
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold
                         )
-                    } else if (download.downloadStatus.startsWith("FAILED")) {
-                        val reason = download.downloadStatus.removePrefix("FAILED: ").ifBlank { "Download interrupted or network timed out" }
+                    } else if (isPausedOrStopped || isFailed) {
+                        val reason = if (isPausedOrStopped) "Download paused by user" else download.downloadStatus.removePrefix("FAILED: ").ifBlank { "Download interrupted or network timed out" }
                         Column {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
@@ -1385,6 +1416,15 @@ private fun DownloadItem(
                         modifier = Modifier.size(28.dp)
                     )
                 }
+            } else if (isActive) {
+                IconButton(onClick = onStop) {
+                    Icon(
+                        Icons.Default.Pause,
+                        contentDescription = "Stop Download",
+                        tint = Color(0xFFE50914),
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
             } else if (isCorruptOrMissing) {
                 IconButton(onClick = {
                     android.widget.Toast.makeText(context, "Download file is missing or corrupted. Please delete and re-download.", android.widget.Toast.LENGTH_SHORT).show()
@@ -1396,7 +1436,7 @@ private fun DownloadItem(
                         modifier = Modifier.size(22.dp)
                     )
                 }
-            } else if (download.downloadStatus.startsWith("FAILED")) {
+            } else if (isPausedOrStopped || isFailed) {
                 IconButton(onClick = onRetry) {
                     Icon(
                         Icons.Default.Refresh,
