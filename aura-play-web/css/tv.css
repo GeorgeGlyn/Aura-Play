@@ -38,9 +38,12 @@
 
 /* Nav Link Focus on TV */
 .nav-link.focused {
-    background: rgba(255, 255, 255, 0.2) !important;
+    background: #E50914 !important;
     color: #FFFFFF !important;
-    transform: scale(1.05) !important;
+    transform: scale(1.12) !important;
+    outline: 2px solid #FFFFFF !important;
+    box-shadow: 0 0 20px rgba(229, 9, 20, 0.9) !important;
+    border-radius: 6px !important;
 }
 
 /* Season Chip Focus on TV */

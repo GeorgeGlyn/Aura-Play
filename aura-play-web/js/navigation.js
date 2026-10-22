@@ -90,8 +90,8 @@ const Navigation = {
         if (window.App && window.App.isModalOpen) {
             return document.getElementById("details-modal");
         }
-        // Otherwise main app viewport
-        return document.getElementById("app-content");
+        // Otherwise entire document body so top navbar + main content are both navigable
+        return document.body;
     },
 
     moveFocus(direction) {
@@ -118,7 +118,43 @@ const Navigation = {
     },
 
     findNextFocusable(current, focusables, direction) {
-        // Try row-based movement first if inside a carousel
+        // 1. Navigation bar D-pad traversal
+        if (current.classList.contains("nav-link")) {
+            const navLinks = Array.from(document.querySelectorAll(".nav-link.focusable"));
+            const idx = navLinks.indexOf(current);
+
+            if (direction === 37) { // Left
+                return idx > 0 ? navLinks[idx - 1] : null;
+            }
+            if (direction === 39) { // Right
+                return idx < navLinks.length - 1 ? navLinks[idx + 1] : null;
+            }
+            if (direction === 40) { // Down -> Move down to hero or top content
+                if (window.App && window.App.currentTab === "search") {
+                    const searchInput = document.getElementById("search-input");
+                    if (searchInput) return searchInput;
+                }
+                const heroPlay = document.getElementById("hero-play-btn");
+                if (heroPlay && window.getComputedStyle(heroPlay).display !== "none" && !heroPlay.closest(".hidden")) {
+                    return heroPlay;
+                }
+                const firstContent = focusables.find(el => !el.classList.contains("nav-link"));
+                if (firstContent) return firstContent;
+            }
+            if (direction === 38) { // Up
+                return null; // Already at top
+            }
+        }
+
+        // 2. Up from Hero Billboard action buttons or Search Input -> Goes directly to active Nav Link
+        if (direction === 38) {
+            if (current.closest(".hero-actions") || current.closest(".hero-billboard") || current.id === "search-input") {
+                const activeNav = document.querySelector(".nav-link.active") || document.querySelector(".nav-link");
+                if (activeNav) return activeNav;
+            }
+        }
+
+        // 3. Try row-based movement first if inside a carousel
         const currentRow = current.closest(".carousel-items");
 
         // 37 = Left, 39 = Right
@@ -135,7 +171,7 @@ const Navigation = {
             }
         }
 
-        // Geometric spatial navigation for cross-row or general layout
+        // 4. Geometric spatial navigation for cross-row or general layout
         const currentRect = current.getBoundingClientRect();
         const currentCenter = {
             x: currentRect.left + currentRect.width / 2,
