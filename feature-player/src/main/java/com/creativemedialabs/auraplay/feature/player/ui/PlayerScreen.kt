@@ -95,7 +95,8 @@ fun PlayerScreen(
     val window = activity?.window
     val isTvDevice = remember {
         context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK) ||
-        (context.getSystemService(Context.UI_MODE_SERVICE) as? android.app.UiModeManager)?.currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+        (context.getSystemService(Context.UI_MODE_SERVICE) as? android.app.UiModeManager)?.currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION ||
+        (context.resources.configuration.smallestScreenWidthDp >= 600 && context.packageManager.hasSystemFeature("android.hardware.type.television"))
     }
 
     // Immersive Fullscreen and Sensor Orientation lifecycle

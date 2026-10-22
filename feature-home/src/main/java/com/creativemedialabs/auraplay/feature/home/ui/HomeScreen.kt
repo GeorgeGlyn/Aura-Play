@@ -45,8 +45,24 @@ private const val TMDB_BACKDROP_BASE = "https://image.tmdb.org/t/p/w780"
 fun HomeScreen(
     onNavigateToDetails: (Int, String) -> Unit,
     onNavigateToSearch: () -> Unit = {},
+    isTv: Boolean = false,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val detectedTv = remember(isTv) {
+        isTv ||
+        context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK) ||
+        (context.getSystemService(android.content.Context.UI_MODE_SERVICE) as? android.app.UiModeManager)?.currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+    }
+
+    if (detectedTv) {
+        TvHomeScreen(
+            onNavigateToDetails = onNavigateToDetails,
+            viewModel = viewModel
+        )
+        return
+    }
+
     val uiState by viewModel.uiState.collectAsState()
     val continueWatching by viewModel.continueWatching.collectAsState()
     val watchlist by viewModel.watchlist.collectAsState()

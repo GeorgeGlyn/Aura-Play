@@ -2,6 +2,23 @@ package com.creativemedialabs.auraplay.core.network.model
 
 import com.google.gson.annotations.SerializedName
 
+@Volatile
+private var cachedTodayStr: String? = null
+@Volatile
+private var lastTodayCheckTime: Long = 0
+
+fun getTodayDateString(): String {
+    val now = System.currentTimeMillis()
+    val cached = cachedTodayStr
+    if (cached != null && now - lastTodayCheckTime < 3600_000L) {
+        return cached
+    }
+    val formatted = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date(now))
+    cachedTodayStr = formatted
+    lastTodayCheckTime = now
+    return formatted
+}
+
 data class TrendingResponse(
     @SerializedName("page") val page: Int,
     @SerializedName("results") val results: List<TmdbMediaItem>,
@@ -44,8 +61,7 @@ data class TmdbMediaItem(
             if (posterPath.isNullOrBlank()) return false
             val date = (releaseDate ?: firstAirDate)?.trim()
             if (date.isNullOrBlank()) return false
-            val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
-            return date <= today
+            return date <= getTodayDateString()
         }
 
     val originalLanguageName: String
@@ -115,8 +131,7 @@ data class MediaDetailResponse(
                        status.equals("Returning Series", ignoreCase = true) ||
                        status.equals("Ended", ignoreCase = true)
             }
-            val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
-            return date <= today
+            return date <= getTodayDateString()
         }
 
     val originalLanguageName: String

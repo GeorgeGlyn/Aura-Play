@@ -16,11 +16,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Home
@@ -217,174 +213,276 @@ private fun AuraPlayApp(
     val isTv = remember {
         BuildConfig.FLAVOR == "tv" ||
         context.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK) ||
-        (context.getSystemService(android.content.Context.UI_MODE_SERVICE) as? android.app.UiModeManager)?.currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+        (context.getSystemService(android.content.Context.UI_MODE_SERVICE) as? android.app.UiModeManager)?.currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION ||
+        (context.resources.configuration.smallestScreenWidthDp >= 600 && context.packageManager.hasSystemFeature("android.hardware.type.television"))
     }
 
-    LaunchedEffect(isPlayerRoute, isInPipMode) {
-        if (!isPlayerRoute && !isTv && !isInPipMode) {
+    LaunchedEffect(isPlayerRoute, isInPipMode, isTv) {
+        if (isTv || BuildConfig.FLAVOR == "tv") {
+            (context as? Activity)?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        } else if (!isPlayerRoute && !isInPipMode) {
             (context as? Activity)?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         }
     }
 
-    val showBottomBar = currentRoute in bottomNavRoutes && !isInPipMode
+    if (isTv) {
+        // ----------------------------------------------------------------------
+        // D-PAD & 16:9 OPTIMIZED TV SHELL
+        // ----------------------------------------------------------------------
+        androidx.compose.foundation.layout.Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFF070707))
+        ) {
+            if (!isPlayerRoute) {
+                com.creativemedialabs.auraplay.tv.TvNavigationRail(
+                    currentRoute = currentRoute,
+                    onNavigate = { route ->
+                        navController.navigate(route) {
+                            popUpTo(BottomNavItem.Home.route)
+                            launchSingleTop = true
+                        }
+                    }
+                )
+            }
 
-    Scaffold(
-        containerColor = Color(0xFF070707),
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        bottomBar = {
-            if (showBottomBar) {
-                NavigationBar(
-                    containerColor = Color(0xF5101010),
-                    contentColor = Color.White,
-                    modifier = Modifier.border(BorderStroke(0.5.dp, Color(0x18FFFFFF)))
-                ) {
-                    // Home Tab
-                    NavigationBarItem(
-                        selected = currentRoute == BottomNavItem.Home.route,
-                        onClick = {
-                            navController.navigate(BottomNavItem.Home.route) {
-                                popUpTo(BottomNavItem.Home.route) { inclusive = true }
-                            }
-                        },
-                        icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
-                        label = { Text("Home", fontSize = 11.sp) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color(0xFFE50914),
-                            selectedTextColor = Color(0xFFE50914),
-                            unselectedIconColor = Color(0xFF888888),
-                            unselectedTextColor = Color(0xFF888888),
-                            indicatorColor = Color(0x22E50914)
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+            ) {
+                NavHost(navController = navController, startDestination = "home") {
+                    composable("home") {
+                        HomeScreen(
+                            onNavigateToDetails = { mediaId, type ->
+                                navController.navigate("details/$mediaId?type=$type")
+                            },
+                            onNavigateToSearch = {
+                                navController.navigate("search")
+                            },
+                            isTv = true
                         )
-                    )
+                    }
+                    composable("search") {
+                        SearchScreen(
+                            onNavigateToDetails = { mediaId, type ->
+                                navController.navigate("details/$mediaId?type=$type")
+                            }
+                        )
+                    }
+                    composable("hot") {
+                        NewAndHotScreen(
+                            onNavigateToDetails = { mediaId, type ->
+                                navController.navigate("details/$mediaId?type=$type")
+                            }
+                        )
+                    }
+                    composable("downloads") {
+                        DownloadsScreen(
+                            onPlayDownload = { localPath ->
+                                val encodedPath = URLEncoder.encode(localPath, StandardCharsets.UTF_8.toString())
+                                navController.navigate("player?url=$encodedPath")
+                            }
+                        )
+                    }
+                    composable("details/{mediaId}?type={type}") { backStackEntry ->
+                        val mediaId = backStackEntry.arguments?.getString("mediaId")?.toIntOrNull() ?: 0
+                        val type = backStackEntry.arguments?.getString("type")
+                        DetailsScreen(
+                            mediaId = mediaId,
+                            mediaType = type,
+                            onNavigateToPlayer = { url ->
+                                val encodedUrl = URLEncoder.encode(url, StandardCharsets.UTF_8.toString())
+                                navController.navigate("player?url=$encodedUrl")
+                            },
+                            onBack = { navController.popBackStack() }
+                        )
+                    }
+                    composable("player?url={url}") { backStackEntry ->
+                        val url = backStackEntry.arguments?.getString("url") ?: ""
+                        val decodedUrl = URLDecoder.decode(url, StandardCharsets.UTF_8.toString())
+                        PlayerScreen(
+                            videoUrl = decodedUrl,
+                            onBack = { navController.popBackStack() }
+                        )
+                    }
+                }
 
-                    // Search Tab
-                    NavigationBarItem(
-                        selected = currentRoute == BottomNavItem.Search.route,
-                        onClick = {
-                            navController.navigate(BottomNavItem.Search.route) {
-                                popUpTo(BottomNavItem.Home.route)
-                            }
-                        },
-                        icon = { Icon(Icons.Default.Search, contentDescription = "Search") },
-                        label = { Text("Search", fontSize = 11.sp) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color(0xFFE50914),
-                            selectedTextColor = Color(0xFFE50914),
-                            unselectedIconColor = Color(0xFF888888),
-                            unselectedTextColor = Color(0xFF888888),
-                            indicatorColor = Color(0x22E50914)
-                        )
-                    )
-
-                    // New & Hot Tab (Netflix iconic tab)
-                    NavigationBarItem(
-                        selected = currentRoute == BottomNavItem.HotAndNew.route,
-                        onClick = {
-                            navController.navigate(BottomNavItem.HotAndNew.route) {
-                                popUpTo(BottomNavItem.Home.route)
-                            }
-                        },
-                        icon = { Icon(Icons.Default.Whatshot, contentDescription = "New & Hot") },
-                        label = { Text("New & Hot", fontSize = 11.sp) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color(0xFFE50914),
-                            selectedTextColor = Color(0xFFE50914),
-                            unselectedIconColor = Color(0xFF888888),
-                            unselectedTextColor = Color(0xFF888888),
-                            indicatorColor = Color(0x22E50914)
-                        )
-                    )
-
-                    // Downloads Tab
-                    NavigationBarItem(
-                        selected = currentRoute == BottomNavItem.Downloads.route,
-                        onClick = {
-                            navController.navigate(BottomNavItem.Downloads.route) {
-                                popUpTo(BottomNavItem.Home.route)
-                            }
-                        },
-                        icon = { Icon(Icons.Default.Download, contentDescription = "Downloads") },
-                        label = { Text("Downloads", fontSize = 11.sp) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color(0xFFE50914),
-                            selectedTextColor = Color(0xFFE50914),
-                            unselectedIconColor = Color(0xFF888888),
-                            unselectedTextColor = Color(0xFF888888),
-                            indicatorColor = Color(0x22E50914)
-                        )
+                // Sleek in-app popup notification banner
+                if (!isPlayerRoute) {
+                    InAppNotificationBanner(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .statusBarsPadding()
                     )
                 }
             }
         }
-    ) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(bottom = innerPadding.calculateBottomPadding())
-        ) {
-            NavHost(navController = navController, startDestination = "home") {
-                composable("home") {
-                    HomeScreen(
-                        onNavigateToDetails = { mediaId, type ->
-                            navController.navigate("details/$mediaId?type=$type")
-                        },
-                        onNavigateToSearch = {
-                            navController.navigate("search")
-                        }
-                    )
-                }
-                composable("search") {
-                    SearchScreen(
-                        onNavigateToDetails = { mediaId, type ->
-                            navController.navigate("details/$mediaId?type=$type")
-                        }
-                    )
-                }
-                composable("hot") {
-                    NewAndHotScreen(
-                        onNavigateToDetails = { mediaId, type ->
-                            navController.navigate("details/$mediaId?type=$type")
-                        }
-                    )
-                }
-                composable("downloads") {
-                    DownloadsScreen(
-                        onPlayDownload = { localPath ->
-                            val encodedPath = URLEncoder.encode(localPath, StandardCharsets.UTF_8.toString())
-                            navController.navigate("player?url=$encodedPath")
-                        }
-                    )
-                }
-                composable("details/{mediaId}?type={type}") { backStackEntry ->
-                    val mediaId = backStackEntry.arguments?.getString("mediaId")?.toIntOrNull() ?: 0
-                    val type = backStackEntry.arguments?.getString("type")
-                    DetailsScreen(
-                        mediaId = mediaId,
-                        mediaType = type,
-                        onNavigateToPlayer = { url ->
-                            val encodedUrl = URLEncoder.encode(url, StandardCharsets.UTF_8.toString())
-                            navController.navigate("player?url=$encodedUrl")
-                        },
-                        onBack = { navController.popBackStack() }
-                    )
-                }
-                composable("player?url={url}") { backStackEntry ->
-                    val url = backStackEntry.arguments?.getString("url") ?: ""
-                    val decodedUrl = URLDecoder.decode(url, StandardCharsets.UTF_8.toString())
-                    PlayerScreen(
-                        videoUrl = decodedUrl,
-                        onBack = { navController.popBackStack() }
-                    )
+    } else {
+        // ----------------------------------------------------------------------
+        // MOBILE SHELL (SCAFFOLD WITH BOTTOM BAR)
+        // ----------------------------------------------------------------------
+        val showBottomBar = currentRoute in bottomNavRoutes && !isInPipMode
+
+        Scaffold(
+            containerColor = Color(0xFF070707),
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            bottomBar = {
+                if (showBottomBar) {
+                    NavigationBar(
+                        containerColor = Color(0xF5101010),
+                        contentColor = Color.White,
+                        modifier = Modifier.border(BorderStroke(0.5.dp, Color(0x18FFFFFF)))
+                    ) {
+                        // Home Tab
+                        NavigationBarItem(
+                            selected = currentRoute == BottomNavItem.Home.route,
+                            onClick = {
+                                navController.navigate(BottomNavItem.Home.route) {
+                                    popUpTo(BottomNavItem.Home.route) { inclusive = true }
+                                }
+                            },
+                            icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
+                            label = { Text("Home", fontSize = 11.sp) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = Color(0xFFE50914),
+                                selectedTextColor = Color(0xFFE50914),
+                                unselectedIconColor = Color(0xFF888888),
+                                unselectedTextColor = Color(0xFF888888),
+                                indicatorColor = Color(0x22E50914)
+                            )
+                        )
+
+                        // Search Tab
+                        NavigationBarItem(
+                            selected = currentRoute == BottomNavItem.Search.route,
+                            onClick = {
+                                navController.navigate(BottomNavItem.Search.route) {
+                                    popUpTo(BottomNavItem.Home.route)
+                                }
+                            },
+                            icon = { Icon(Icons.Default.Search, contentDescription = "Search") },
+                            label = { Text("Search", fontSize = 11.sp) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = Color(0xFFE50914),
+                                selectedTextColor = Color(0xFFE50914),
+                                unselectedIconColor = Color(0xFF888888),
+                                unselectedTextColor = Color(0xFF888888),
+                                indicatorColor = Color(0x22E50914)
+                            )
+                        )
+
+                        // New & Hot Tab (Netflix iconic tab)
+                        NavigationBarItem(
+                            selected = currentRoute == BottomNavItem.HotAndNew.route,
+                            onClick = {
+                                navController.navigate(BottomNavItem.HotAndNew.route) {
+                                    popUpTo(BottomNavItem.Home.route)
+                                }
+                            },
+                            icon = { Icon(Icons.Default.Whatshot, contentDescription = "New & Hot") },
+                            label = { Text("New & Hot", fontSize = 11.sp) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = Color(0xFFE50914),
+                                selectedTextColor = Color(0xFFE50914),
+                                unselectedIconColor = Color(0xFF888888),
+                                unselectedTextColor = Color(0xFF888888),
+                                indicatorColor = Color(0x22E50914)
+                            )
+                        )
+
+                        // Downloads Tab
+                        NavigationBarItem(
+                            selected = currentRoute == BottomNavItem.Downloads.route,
+                            onClick = {
+                                navController.navigate(BottomNavItem.Downloads.route) {
+                                    popUpTo(BottomNavItem.Home.route)
+                                }
+                            },
+                            icon = { Icon(Icons.Default.Download, contentDescription = "Downloads") },
+                            label = { Text("Downloads", fontSize = 11.sp) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = Color(0xFFE50914),
+                                selectedTextColor = Color(0xFFE50914),
+                                unselectedIconColor = Color(0xFF888888),
+                                unselectedTextColor = Color(0xFF888888),
+                                indicatorColor = Color(0x22E50914)
+                            )
+                        )
+                    }
                 }
             }
+        ) { innerPadding ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(bottom = innerPadding.calculateBottomPadding())
+            ) {
+                NavHost(navController = navController, startDestination = "home") {
+                    composable("home") {
+                        HomeScreen(
+                            onNavigateToDetails = { mediaId, type ->
+                                navController.navigate("details/$mediaId?type=$type")
+                            },
+                            onNavigateToSearch = {
+                                navController.navigate("search")
+                            },
+                            isTv = false
+                        )
+                    }
+                    composable("search") {
+                        SearchScreen(
+                            onNavigateToDetails = { mediaId, type ->
+                                navController.navigate("details/$mediaId?type=$type")
+                            }
+                        )
+                    }
+                    composable("hot") {
+                        NewAndHotScreen(
+                            onNavigateToDetails = { mediaId, type ->
+                                navController.navigate("details/$mediaId?type=$type")
+                            }
+                        )
+                    }
+                    composable("downloads") {
+                        DownloadsScreen(
+                            onPlayDownload = { localPath ->
+                                val encodedPath = URLEncoder.encode(localPath, StandardCharsets.UTF_8.toString())
+                                navController.navigate("player?url=$encodedPath")
+                            }
+                        )
+                    }
+                    composable("details/{mediaId}?type={type}") { backStackEntry ->
+                        val mediaId = backStackEntry.arguments?.getString("mediaId")?.toIntOrNull() ?: 0
+                        val type = backStackEntry.arguments?.getString("type")
+                        DetailsScreen(
+                            mediaId = mediaId,
+                            mediaType = type,
+                            onNavigateToPlayer = { url ->
+                                val encodedUrl = URLEncoder.encode(url, StandardCharsets.UTF_8.toString())
+                                navController.navigate("player?url=$encodedUrl")
+                            },
+                            onBack = { navController.popBackStack() }
+                        )
+                    }
+                    composable("player?url={url}") { backStackEntry ->
+                        val url = backStackEntry.arguments?.getString("url") ?: ""
+                        val decodedUrl = URLDecoder.decode(url, StandardCharsets.UTF_8.toString())
+                        PlayerScreen(
+                            videoUrl = decodedUrl,
+                            onBack = { navController.popBackStack() }
+                        )
+                    }
+                }
 
-            // Sleek in-app popup notification banner (hidden during video playback)
-            if (!isPlayerRoute) {
-                InAppNotificationBanner(
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .statusBarsPadding()
-                )
+                // Sleek in-app popup notification banner (hidden during video playback)
+                if (!isPlayerRoute) {
+                    InAppNotificationBanner(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .statusBarsPadding()
+                    )
+                }
             }
         }
     }

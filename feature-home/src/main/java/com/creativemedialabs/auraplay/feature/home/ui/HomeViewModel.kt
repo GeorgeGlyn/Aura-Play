@@ -32,11 +32,23 @@ data class HomeUiState(
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val repository: TmdbRepository,
+    private val catalogCache: com.creativemedialabs.auraplay.core.network.cache.CatalogCache,
     watchHistoryDao: WatchHistoryDao,
     watchlistDao: WatchlistDao
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(HomeUiState(isLoading = true))
+    private val _uiState = MutableStateFlow(
+        catalogCache.getCachedCatalog()?.let { cached ->
+            HomeUiState(
+                spotlightItem = cached.spotlightItem,
+                trendingItems = cached.trendingItems,
+                top10Movies = cached.top10Movies,
+                popularMovies = cached.popularMovies,
+                popularTvShows = cached.popularTvShows,
+                isLoading = false
+            )
+        } ?: HomeUiState(isLoading = true)
+    )
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     val continueWatching: StateFlow<List<WatchHistoryEntity>> = watchHistoryDao.getAllWatchHistory()
@@ -55,52 +67,63 @@ class HomeViewModel @Inject constructor(
 
     fun loadCatalog() {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+            // Only show full loading spinner if we don't have any cached catalog
+            if (_uiState.value.trendingItems.isEmpty() && _uiState.value.popularMovies.isEmpty()) {
+                _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+            }
 
             val trendingJob = async { repository.getTrendingMovies() }
             val popularJob = async { repository.getPopularMovies() }
             val topRatedJob = async { repository.getTopRatedMovies() }
             val tvJob = async { repository.getPopularTvShows() }
 
-            // Fast path: Show trending and popular movies immediately as soon as ready
             val trendingRes = trendingJob.await()
             val popularRes = popularJob.await()
-
-            val trendingList = (trendingRes.getOrNull()?.results ?: emptyList()).filter { it.isReleased }
-            val popularList = (popularRes.getOrNull()?.results ?: emptyList()).filter { it.isReleased }
-            val spotlight = trendingList.firstOrNull() ?: popularList.firstOrNull()
-
-            if (trendingList.isNotEmpty() || popularList.isNotEmpty()) {
-                _uiState.value = _uiState.value.copy(
-                    spotlightItem = spotlight,
-                    trendingItems = trendingList,
-                    popularMovies = popularList,
-                    top10Movies = trendingList.take(10),
-                    isLoading = false
-                )
-            }
-
-            // Secondary: Stream in Top Rated and TV Shows
             val topRatedRes = topRatedJob.await()
             val tvRes = tvJob.await()
 
+            val trendingList = (trendingRes.getOrNull()?.results ?: emptyList()).filter { it.isReleased }
+            val popularList = (popularRes.getOrNull()?.results ?: emptyList()).filter { it.isReleased }
             val topRatedList = (topRatedRes.getOrNull()?.results ?: emptyList()).filter { it.isReleased }
             val tvList = (tvRes.getOrNull()?.results ?: emptyList()).filter { it.isReleased }
+
+            val spotlight = trendingList.firstOrNull() ?: popularList.firstOrNull() ?: _uiState.value.spotlightItem
             val top10 = topRatedList.take(10).ifEmpty { trendingList.take(10) }
 
-            if (trendingList.isEmpty() && popularList.isEmpty() && topRatedList.isEmpty()) {
-                _uiState.value = HomeUiState(
-                    isLoading = false,
-                    errorMessage = trendingRes.exceptionOrNull()?.message ?: "Unable to fetch catalog"
-                )
+            if (trendingList.isEmpty() && popularList.isEmpty() && topRatedList.isEmpty() && tvList.isEmpty()) {
+                if (_uiState.value.trendingItems.isEmpty()) {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        errorMessage = trendingRes.exceptionOrNull()?.message ?: "Unable to fetch catalog"
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(isLoading = false)
+                }
             } else {
+                val newTrending = if (trendingList.isNotEmpty()) trendingList else _uiState.value.trendingItems
+                val newPopular = if (popularList.isNotEmpty()) popularList else _uiState.value.popularMovies
+                val newTop10 = if (top10.isNotEmpty()) top10 else _uiState.value.top10Movies
+                val newTv = if (tvList.isNotEmpty()) tvList else _uiState.value.popularTvShows
+
                 _uiState.value = _uiState.value.copy(
-                    spotlightItem = _uiState.value.spotlightItem ?: spotlight,
-                    trendingItems = if (_uiState.value.trendingItems.isEmpty()) trendingList else _uiState.value.trendingItems,
-                    top10Movies = top10,
-                    popularMovies = if (_uiState.value.popularMovies.isEmpty()) popularList else _uiState.value.popularMovies,
-                    popularTvShows = tvList,
-                    isLoading = false
+                    spotlightItem = spotlight,
+                    trendingItems = newTrending,
+                    top10Movies = newTop10,
+                    popularMovies = newPopular,
+                    popularTvShows = newTv,
+                    isLoading = false,
+                    errorMessage = null
+                )
+
+                // Persist fresh catalog to cache
+                catalogCache.saveCatalog(
+                    com.creativemedialabs.auraplay.core.network.cache.CachedHomeCatalog(
+                        spotlightItem = spotlight,
+                        trendingItems = newTrending,
+                        top10Movies = newTop10,
+                        popularMovies = newPopular,
+                        popularTvShows = newTv
+                    )
                 )
             }
         }
