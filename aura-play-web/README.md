@@ -45,11 +45,17 @@ tizen install -s <YOUR_TV_IP>:26101 -n AuraPlay.wgt
 ```
 
 #### Method B: Using Samsung Tizen Studio (IDE)
-1. Open **Tizen Studio**.
-2. Go to **File > Import > Tizen > Web Projects into Workspace**.
-3. Select `d:\Aura-Play\aura-play-web`.
-4. Right-click the project > **Run As > Tizen Web Application**.
-5. Tizen Studio will automatically sign, upload, and launch Aura Play on your Samsung TV screen!
+1. Launch **Tizen Studio**.
+2. **Workspace Prompt**: In the *Workspace Launcher* dialog, choose your regular workspace folder (e.g., `C:\Users\<username>\workspace` or any folder **outside** `d:\Aura-Play\aura-play-web`).
+   > ⚠️ **Important**: Do **not** select `d:\Aura-Play\aura-play-web` as the Eclipse/Tizen workspace directory itself, because Eclipse requires projects to be imported into a workspace, not be the workspace itself.
+3. In Tizen Studio, click: **File > Import...**
+4. Expand **Tizen** and select **Tizen Project**, then click **Next**.
+5. Select **Select root directory**, click **Browse...**, and navigate to:
+   `d:\Aura-Play\aura-play-web`
+6. You will see **`AuraPlay`** appear in the projects list with a checkmark.
+7. Click **Finish**.
+8. The **AuraPlay** project will now appear in your **Project Explorer**!
+9. Right-click the project > **Run As > 1 Tizen Web Application** (or **Run As > 2 Tizen Web Application on TV Simulator**).
 
 ---
 
