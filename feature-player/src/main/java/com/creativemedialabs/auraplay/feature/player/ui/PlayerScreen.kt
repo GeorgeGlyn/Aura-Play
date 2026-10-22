@@ -93,15 +93,21 @@ fun PlayerScreen(
     val context = LocalContext.current
     val activity = context as? Activity
     val window = activity?.window
+    val isTvDevice = remember {
+        context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK) ||
+        (context.getSystemService(Context.UI_MODE_SERVICE) as? android.app.UiModeManager)?.currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+    }
 
     // Immersive Fullscreen and Sensor Orientation lifecycle
-    DisposableEffect(Unit) {
+    DisposableEffect(isTvDevice) {
         val insetsController = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
 
         // Extend video under camera notch / punch hole for true 100% full screen
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            window?.attributes?.layoutInDisplayCutoutMode =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && window != null) {
+            val params = window.attributes
+            params.layoutInDisplayCutoutMode =
                 WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            window.attributes = params
         }
 
         // Keep screen awake while watching video
@@ -113,8 +119,11 @@ fun PlayerScreen(
             hide(WindowInsetsCompat.Type.systemBars())
         }
 
-        // Enable sensor rotation so user can turn phone to landscape seamlessly
-        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR
+        if (!isTvDevice) {
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR
+        } else {
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        }
 
         onDispose {
             // Restore normal system bars
@@ -124,8 +133,12 @@ fun PlayerScreen(
             }
             window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
-            // Return to portrait orientation
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            // Return to portrait orientation ONLY on mobile phones, NEVER on TV!
+            if (!isTvDevice) {
+                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            } else {
+                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            }
         }
     }
 
@@ -452,24 +465,29 @@ fun WebStreamPlayer(
                 }
 
                 val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
-                IconButton(
-                    onClick = {
-                        val act = context as? Activity
-                        if (isLandscape) {
-                            act?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                        } else {
-                            act?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                        }
-                    },
-                    modifier = Modifier.background(Color(0x66000000), CircleShape)
-                ) {
-                    Icon(
-                        imageVector = if (isLandscape) Icons.Default.ScreenLockPortrait else Icons.Default.ScreenRotation,
-                        contentDescription = if (isLandscape) "Portrait" else "Landscape",
-                        tint = Color.White
-                    )
+                val isTv = remember {
+                    context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK)
                 }
-                Spacer(modifier = Modifier.width(8.dp))
+                if (!isTv) {
+                    IconButton(
+                        onClick = {
+                            val act = context as? Activity
+                            if (isLandscape) {
+                                act?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                            } else {
+                                act?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                            }
+                        },
+                        modifier = Modifier.background(Color(0x66000000), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = if (isLandscape) Icons.Default.ScreenLockPortrait else Icons.Default.ScreenRotation,
+                            contentDescription = if (isLandscape) "Portrait" else "Landscape",
+                            tint = Color.White
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
 
                 IconButton(
                     onClick = onEnterPip,
@@ -519,6 +537,10 @@ fun ExoPlayerStreamPlayer(
     val context = LocalContext.current
     val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     val activity = context as? Activity
+    val isTvDevice = remember {
+        context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK) ||
+        (context.getSystemService(Context.UI_MODE_SERVICE) as? android.app.UiModeManager)?.currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+    }
 
     // Build ExoPlayer with DefaultMediaSourceFactory and NetMirror HTTP headers
     val exoPlayer = remember {
@@ -865,6 +887,7 @@ fun ExoPlayerStreamPlayer(
                     },
                     onTracksClicked = { showTrackDialog = true },
                     onEnterPip = onEnterPip,
+                    isTv = isTvDevice,
                     onSeek = { fraction ->
                         val durToUse = if (exoPlayer.duration > 0) exoPlayer.duration else if (totalDuration > 1000L) totalDuration else 0L
                         if (durToUse > 0) {
@@ -903,6 +926,7 @@ private fun BoxScope.PlayerControlsOverlay(
     onToggleFillScreen: () -> Unit,
     onTracksClicked: () -> Unit,
     onEnterPip: () -> Unit,
+    isTv: Boolean = false,
     onSeek: (Float) -> Unit
 ) {
     // Dark Scrim
@@ -934,19 +958,21 @@ private fun BoxScope.PlayerControlsOverlay(
         )
 
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onToggleOrientation) {
-                Icon(
-                    imageVector = if (isLandscape) Icons.Default.ScreenLockPortrait else Icons.Default.ScreenRotation,
-                    contentDescription = if (isLandscape) "Switch to Portrait" else "Switch to Landscape",
-                    tint = Color.White
-                )
-            }
-            IconButton(onClick = onEnterPip) {
-                Icon(
-                    imageVector = Icons.Default.PictureInPictureAlt,
-                    contentDescription = "PIP Mode",
-                    tint = Color.White
-                )
+            if (!isTv) {
+                IconButton(onClick = onToggleOrientation) {
+                    Icon(
+                        imageVector = if (isLandscape) Icons.Default.ScreenLockPortrait else Icons.Default.ScreenRotation,
+                        contentDescription = if (isLandscape) "Switch to Portrait" else "Switch to Landscape",
+                        tint = Color.White
+                    )
+                }
+                IconButton(onClick = onEnterPip) {
+                    Icon(
+                        imageVector = Icons.Default.PictureInPictureAlt,
+                        contentDescription = "PIP Mode",
+                        tint = Color.White
+                    )
+                }
             }
             IconButton(onClick = onLockScreen) {
                 Icon(Icons.Default.LockOpen, contentDescription = "Lock", tint = Color.White)

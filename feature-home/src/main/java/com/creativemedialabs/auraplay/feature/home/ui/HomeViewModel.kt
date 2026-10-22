@@ -57,37 +57,49 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
 
-            val trendingDeferred = async { repository.getTrendingMovies() }
-            val popularDeferred = async { repository.getPopularMovies() }
-            val topRatedDeferred = async { repository.getTopRatedMovies() }
-            val tvDeferred = async { repository.getPopularTvShows() }
+            val trendingJob = async { repository.getTrendingMovies() }
+            val popularJob = async { repository.getPopularMovies() }
+            val topRatedJob = async { repository.getTopRatedMovies() }
+            val tvJob = async { repository.getPopularTvShows() }
 
-            val trendingRes = trendingDeferred.await()
-            val popularRes = popularDeferred.await()
-            val topRatedRes = topRatedDeferred.await()
-            val tvRes = tvDeferred.await()
+            // Fast path: Show trending and popular movies immediately as soon as ready
+            val trendingRes = trendingJob.await()
+            val popularRes = popularJob.await()
 
             val trendingList = (trendingRes.getOrNull()?.results ?: emptyList()).filter { it.isReleased }
             val popularList = (popularRes.getOrNull()?.results ?: emptyList()).filter { it.isReleased }
+            val spotlight = trendingList.firstOrNull() ?: popularList.firstOrNull()
+
+            if (trendingList.isNotEmpty() || popularList.isNotEmpty()) {
+                _uiState.value = _uiState.value.copy(
+                    spotlightItem = spotlight,
+                    trendingItems = trendingList,
+                    popularMovies = popularList,
+                    top10Movies = trendingList.take(10),
+                    isLoading = false
+                )
+            }
+
+            // Secondary: Stream in Top Rated and TV Shows
+            val topRatedRes = topRatedJob.await()
+            val tvRes = tvJob.await()
+
             val topRatedList = (topRatedRes.getOrNull()?.results ?: emptyList()).filter { it.isReleased }
             val tvList = (tvRes.getOrNull()?.results ?: emptyList()).filter { it.isReleased }
-
-            val spotlight = trendingList.firstOrNull() ?: popularList.firstOrNull()
             val top10 = topRatedList.take(10).ifEmpty { trendingList.take(10) }
 
-            if (trendingList.isEmpty() && popularList.isEmpty()) {
+            if (trendingList.isEmpty() && popularList.isEmpty() && topRatedList.isEmpty()) {
                 _uiState.value = HomeUiState(
                     isLoading = false,
                     errorMessage = trendingRes.exceptionOrNull()?.message ?: "Unable to fetch catalog"
                 )
             } else {
-                _uiState.value = HomeUiState(
-                    spotlightItem = spotlight,
-                    trendingItems = trendingList,
+                _uiState.value = _uiState.value.copy(
+                    spotlightItem = _uiState.value.spotlightItem ?: spotlight,
+                    trendingItems = if (_uiState.value.trendingItems.isEmpty()) trendingList else _uiState.value.trendingItems,
                     top10Movies = top10,
-                    popularMovies = popularList,
+                    popularMovies = if (_uiState.value.popularMovies.isEmpty()) popularList else _uiState.value.popularMovies,
                     popularTvShows = tvList,
-                    selectedCategory = _uiState.value.selectedCategory,
                     isLoading = false
                 )
             }

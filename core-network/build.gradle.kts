@@ -14,7 +14,8 @@ val localProperties = Properties()
 if (localPropertiesFile.exists()) {
     localProperties.load(FileInputStream(localPropertiesFile))
 }
-val tmdbApiKey = localProperties.getProperty("tmdb.api.key", "")
+val tmdbApiKey = localProperties.getProperty("tmdb.api.key")?.takeIf { it.isNotBlank() }
+    ?: "4094b2202d26dc87fd9ce3a1a57b1c65"
 
 android {
     namespace = "com.creativemedialabs.auraplay.core.network"

@@ -1,17 +1,20 @@
 package com.creativemedialabs.auraplay.feature.home.ui
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -19,6 +22,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -34,8 +38,8 @@ import coil.compose.AsyncImage
 import com.creativemedialabs.auraplay.core.database.entity.WatchHistoryEntity
 import com.creativemedialabs.auraplay.core.network.model.TmdbMediaItem
 
-private const val TMDB_POSTER_BASE = "https://image.tmdb.org/t/p/w500"
-private const val TMDB_BACKDROP_BASE = "https://image.tmdb.org/t/p/w1280"
+private const val TMDB_POSTER_BASE = "https://image.tmdb.org/t/p/w342"
+private const val TMDB_BACKDROP_BASE = "https://image.tmdb.org/t/p/w780"
 
 @Composable
 fun HomeScreen(
@@ -93,141 +97,158 @@ fun HomeScreen(
                 else -> uiState.spotlightItem
             }
 
-            // Scrollable Catalog Content
-            Column(
+            // Scrollable Catalog Content (Optimized with LazyColumn for high performance on TV & mobile)
+            LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
                     .padding(bottom = 80.dp)
             ) {
                 // 1. Full-Bleed Netflix-Style Hero Spotlight Billboard (for All, Movies, TV Shows)
                 if (selectedCategory != "My List") {
-                    spotlight?.let { heroItem ->
-                        HeroBillboard(
-                            item = heroItem,
-                            onPlay = { onNavigateToDetails(heroItem.id, heroItem.mediaType) },
-                            onDetails = { onNavigateToDetails(heroItem.id, heroItem.mediaType) }
-                        )
+                    item {
+                        spotlight?.let { heroItem ->
+                            HeroBillboard(
+                                item = heroItem,
+                                onPlay = { onNavigateToDetails(heroItem.id, heroItem.mediaType) },
+                                onDetails = { onNavigateToDetails(heroItem.id, heroItem.mediaType) }
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
                     }
-                    Spacer(modifier = Modifier.height(16.dp))
                 } else {
-                    Spacer(modifier = Modifier.height(80.dp))
+                    item {
+                        Spacer(modifier = Modifier.height(80.dp))
+                    }
                 }
 
                 // 2. Continue Watching (if watch history exists)
                 if (continueWatching.isNotEmpty()) {
-                    SectionHeader(title = "Continue Watching for You")
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        items(continueWatching) { item ->
-                            ContinueWatchingCard(item = item, onClick = { onNavigateToDetails(item.mediaId, item.mediaType) })
+                    item {
+                        SectionHeader(title = "Continue Watching for You")
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            items(continueWatching, key = { it.mediaId }) { item ->
+                                ContinueWatchingCard(item = item, onClick = { onNavigateToDetails(item.mediaId, item.mediaType) })
+                            }
                         }
+                        Spacer(modifier = Modifier.height(28.dp))
                     }
-                    Spacer(modifier = Modifier.height(28.dp))
                 }
 
                 // 3. My List Row (Saved Movies & Shows)
                 if (watchlist.isNotEmpty()) {
-                    SectionHeader(title = "My List")
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        items(watchlist) { item ->
-                            StandardMediaPosterCard(
-                                item = TmdbMediaItem(
-                                    id = item.mediaId,
-                                    title = item.title,
-                                    posterPath = item.posterPath,
-                                    rawMediaType = item.mediaType
-                                ),
-                                onClick = { onNavigateToDetails(item.mediaId, item.mediaType) }
-                            )
+                    item {
+                        SectionHeader(title = "My List")
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            items(watchlist, key = { it.mediaId }) { item ->
+                                StandardMediaPosterCard(
+                                    item = TmdbMediaItem(
+                                        id = item.mediaId,
+                                        title = item.title,
+                                        posterPath = item.posterPath,
+                                        rawMediaType = item.mediaType
+                                    ),
+                                    onClick = { onNavigateToDetails(item.mediaId, item.mediaType) }
+                                )
+                            }
                         }
+                        Spacer(modifier = Modifier.height(28.dp))
                     }
-                    Spacer(modifier = Modifier.height(28.dp))
                 }
 
                 // Category-Specific Sections:
                 if (selectedCategory == "All" || selectedCategory == "Movies") {
                     // Top 10 Movies Today
                     if (uiState.top10Movies.isNotEmpty()) {
-                        SectionHeader(title = "Top 10 Movies Today", badge = "TOP 10")
-                        LazyRow(
-                            contentPadding = PaddingValues(horizontal = 16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(14.dp)
-                        ) {
-                            itemsIndexed(uiState.top10Movies) { index, item ->
-                                Top10NumberedCard(
-                                    rank = index + 1,
-                                    item = item,
-                                    onClick = { onNavigateToDetails(item.id, item.mediaType) }
-                                )
+                        item {
+                            SectionHeader(title = "Top 10 Movies Today", badge = "TOP 10")
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                itemsIndexed(uiState.top10Movies, key = { _, item -> item.id }) { index, item ->
+                                    Top10NumberedCard(
+                                        rank = index + 1,
+                                        item = item,
+                                        onClick = { onNavigateToDetails(item.id, item.mediaType) }
+                                    )
+                                }
                             }
+                            Spacer(modifier = Modifier.height(28.dp))
                         }
-                        Spacer(modifier = Modifier.height(28.dp))
                     }
 
                     // Trending Movies
                     val trendingMovies = uiState.trendingItems.filter { !it.isTvShow }
                     if (trendingMovies.isNotEmpty()) {
-                        SectionHeader(title = "Trending Movies")
-                        LazyRow(
-                            contentPadding = PaddingValues(horizontal = 16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            items(trendingMovies) { item ->
-                                StandardMediaPosterCard(item = item, onClick = { onNavigateToDetails(item.id, item.mediaType) })
+                        item {
+                            SectionHeader(title = "Trending Movies")
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                items(trendingMovies, key = { it.id }) { item ->
+                                    StandardMediaPosterCard(item = item, onClick = { onNavigateToDetails(item.id, item.mediaType) })
+                                }
                             }
+                            Spacer(modifier = Modifier.height(28.dp))
                         }
-                        Spacer(modifier = Modifier.height(28.dp))
                     }
 
                     // Blockbuster Movies
                     if (uiState.popularMovies.isNotEmpty()) {
-                        SectionHeader(title = "Blockbuster Movies")
-                        LazyRow(
-                            contentPadding = PaddingValues(horizontal = 16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            items(uiState.popularMovies) { item ->
-                                StandardMediaPosterCard(item = item, onClick = { onNavigateToDetails(item.id, item.mediaType) })
+                        item {
+                            SectionHeader(title = "Blockbuster Movies")
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                items(uiState.popularMovies, key = { it.id }) { item ->
+                                    StandardMediaPosterCard(item = item, onClick = { onNavigateToDetails(item.id, item.mediaType) })
+                                }
                             }
+                            Spacer(modifier = Modifier.height(28.dp))
                         }
-                        Spacer(modifier = Modifier.height(28.dp))
                     }
                 }
 
                 if (selectedCategory == "All" || selectedCategory == "TV Shows") {
                     // Popular TV Shows
                     if (uiState.popularTvShows.isNotEmpty()) {
-                        SectionHeader(title = if (selectedCategory == "TV Shows") "Popular TV Series" else "Bingeworthy TV Shows")
-                        LazyRow(
-                            contentPadding = PaddingValues(horizontal = 16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            items(uiState.popularTvShows) { item ->
-                                StandardMediaPosterCard(item = item, onClick = { onNavigateToDetails(item.id, item.mediaType) })
+                        item {
+                            SectionHeader(title = if (selectedCategory == "TV Shows") "Popular TV Series" else "Bingeworthy TV Shows")
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                items(uiState.popularTvShows, key = { it.id }) { item ->
+                                    StandardMediaPosterCard(item = item, onClick = { onNavigateToDetails(item.id, item.mediaType) })
+                                }
                             }
+                            Spacer(modifier = Modifier.height(28.dp))
                         }
-                        Spacer(modifier = Modifier.height(28.dp))
                     }
 
                     // Trending TV Shows
                     val trendingTv = uiState.trendingItems.filter { it.isTvShow }
                     if (trendingTv.isNotEmpty()) {
-                        SectionHeader(title = "Trending TV Series")
-                        LazyRow(
-                            contentPadding = PaddingValues(horizontal = 16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            items(trendingTv) { item ->
-                                StandardMediaPosterCard(item = item, onClick = { onNavigateToDetails(item.id, item.mediaType) })
+                        item {
+                            SectionHeader(title = "Trending TV Series")
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                items(trendingTv, key = { it.id }) { item ->
+                                    StandardMediaPosterCard(item = item, onClick = { onNavigateToDetails(item.id, item.mediaType) })
+                                }
                             }
+                            Spacer(modifier = Modifier.height(28.dp))
                         }
-                        Spacer(modifier = Modifier.height(28.dp))
                     }
                 }
             }
@@ -322,17 +343,25 @@ private fun TopGlassmorphicNavBar(
         ) {
             categories.forEach { cat ->
                 val isSelected = cat == selectedCategory
+                val interactionSource = remember { MutableInteractionSource() }
+                val isFocused by interactionSource.collectIsFocusedAsState()
+
                 Surface(
                     shape = RoundedCornerShape(20.dp),
-                    color = if (isSelected) Color.White else Color(0x33FFFFFF),
-                    border = if (!isSelected) BorderStroke(1.dp, Color(0x22FFFFFF)) else null,
-                    modifier = Modifier.clickable { onCategorySelected(cat) }
+                    color = if (isSelected || isFocused) Color.White else Color(0x33FFFFFF),
+                    border = BorderStroke(
+                        width = if (isFocused) 2.dp else 1.dp,
+                        color = if (isFocused) Color.White else if (!isSelected) Color(0x22FFFFFF) else Color.Transparent
+                    ),
+                    modifier = Modifier
+                        .focusable(interactionSource = interactionSource)
+                        .clickable(interactionSource = interactionSource, indication = null) { onCategorySelected(cat) }
                 ) {
                     Text(
                         text = cat,
-                        color = if (isSelected) Color.Black else Color.White,
+                        color = if (isSelected || isFocused) Color.Black else Color.White,
                         fontSize = 13.sp,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                        fontWeight = if (isSelected || isFocused) FontWeight.Bold else FontWeight.Medium,
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
                     )
                 }
@@ -563,11 +592,22 @@ private fun StandardMediaPosterCard(
     item: TmdbMediaItem,
     onClick: () -> Unit
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+    val scale by animateFloatAsState(targetValue = if (isFocused) 1.06f else 1f, label = "poster_scale")
+
     Column(
         modifier = Modifier
             .width(120.dp)
+            .scale(scale)
             .clip(RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
+            .border(
+                width = if (isFocused) 2.dp else 0.dp,
+                color = if (isFocused) Color.White else Color.Transparent,
+                shape = RoundedCornerShape(8.dp)
+            )
+            .focusable(interactionSource = interactionSource)
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
     ) {
         Box(
             modifier = Modifier
@@ -620,9 +660,9 @@ private fun StandardMediaPosterCard(
 
         Text(
             text = item.title ?: item.name ?: "",
-            color = Color(0xFFCCCCCC),
+            color = if (isFocused) Color.White else Color(0xFFCCCCCC),
             fontSize = 12.sp,
-            fontWeight = FontWeight.Medium,
+            fontWeight = if (isFocused) FontWeight.Bold else FontWeight.Medium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
@@ -638,11 +678,23 @@ private fun Top10NumberedCard(
     item: TmdbMediaItem,
     onClick: () -> Unit
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+    val scale by animateFloatAsState(targetValue = if (isFocused) 1.06f else 1f, label = "top10_scale")
+
     Box(
         modifier = Modifier
             .width(150.dp)
             .height(180.dp)
-            .clickable(onClick = onClick)
+            .scale(scale)
+            .clip(RoundedCornerShape(8.dp))
+            .border(
+                width = if (isFocused) 2.dp else 0.dp,
+                color = if (isFocused) Color.White else Color.Transparent,
+                shape = RoundedCornerShape(8.dp)
+            )
+            .focusable(interactionSource = interactionSource)
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
     ) {
         // Giant Stylized Rank Number
         Text(
@@ -683,6 +735,10 @@ private fun ContinueWatchingCard(
     item: WatchHistoryEntity,
     onClick: () -> Unit
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+    val scale by animateFloatAsState(targetValue = if (isFocused) 1.06f else 1f, label = "cw_scale")
+
     val progressFraction = if (item.durationMs > 0) {
         (item.progressMs.toFloat() / item.durationMs).coerceIn(0.05f, 1f)
     } else 0.35f
@@ -690,8 +746,15 @@ private fun ContinueWatchingCard(
     Column(
         modifier = Modifier
             .width(140.dp)
+            .scale(scale)
             .clip(RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
+            .border(
+                width = if (isFocused) 2.dp else 0.dp,
+                color = if (isFocused) Color.White else Color.Transparent,
+                shape = RoundedCornerShape(8.dp)
+            )
+            .focusable(interactionSource = interactionSource)
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
     ) {
         Box(
             modifier = Modifier
@@ -740,9 +803,9 @@ private fun ContinueWatchingCard(
 
         Text(
             text = item.title,
-            color = Color.White,
+            color = if (isFocused) Color.White else Color(0xFFCCCCCC),
             fontSize = 12.sp,
-            fontWeight = FontWeight.Medium,
+            fontWeight = if (isFocused) FontWeight.Bold else FontWeight.Medium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
