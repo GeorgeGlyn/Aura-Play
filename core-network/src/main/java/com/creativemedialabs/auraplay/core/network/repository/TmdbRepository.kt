@@ -11,38 +11,100 @@ import javax.inject.Inject
 class TmdbRepository @Inject constructor(
     private val api: TmdbApi
 ) {
-    suspend fun getTrendingMovies(): Result<TrendingResponse> = withContext(Dispatchers.IO) {
+    suspend fun getTrendingMovies(page: Int = 1): Result<TrendingResponse> = withContext(Dispatchers.IO) {
         try {
-            val response = api.getTrending(apiKey = BuildConfig.TMDB_API_KEY)
+            val response = api.getTrending(apiKey = BuildConfig.TMDB_API_KEY, page = page)
             Result.success(response)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
-    suspend fun getPopularMovies(): Result<TrendingResponse> = withContext(Dispatchers.IO) {
+    suspend fun getPopularMovies(page: Int = 1): Result<TrendingResponse> = withContext(Dispatchers.IO) {
         try {
-            val response = api.getPopularMovies(apiKey = BuildConfig.TMDB_API_KEY)
+            val response = api.getPopularMovies(apiKey = BuildConfig.TMDB_API_KEY, page = page)
             Result.success(response)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
-    suspend fun getTopRatedMovies(): Result<TrendingResponse> = withContext(Dispatchers.IO) {
+    suspend fun getTopRatedMovies(page: Int = 1): Result<TrendingResponse> = withContext(Dispatchers.IO) {
         try {
-            val response = api.getTopRatedMovies(apiKey = BuildConfig.TMDB_API_KEY)
+            val response = api.getTopRatedMovies(apiKey = BuildConfig.TMDB_API_KEY, page = page)
             Result.success(response)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
-    suspend fun getPopularTvShows(): Result<TrendingResponse> = withContext(Dispatchers.IO) {
+    suspend fun getPopularTvShows(page: Int = 1): Result<TrendingResponse> = withContext(Dispatchers.IO) {
         try {
-            val response = api.getPopularTvShows(apiKey = BuildConfig.TMDB_API_KEY)
+            val response = api.getPopularTvShows(apiKey = BuildConfig.TMDB_API_KEY, page = page)
             val mappedResults = response.results.map { it.copy(rawMediaType = "tv") }
             Result.success(response.copy(results = mappedResults))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getTrendingTvShows(page: Int = 1): Result<TrendingResponse> = withContext(Dispatchers.IO) {
+        try {
+            val response = api.getTrendingTvShows(apiKey = BuildConfig.TMDB_API_KEY, page = page)
+            val mappedResults = response.results.map { it.copy(rawMediaType = "tv") }
+            Result.success(response.copy(results = mappedResults))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun discoverMovies(genreId: String?, page: Int = 1): Result<TrendingResponse> = withContext(Dispatchers.IO) {
+        try {
+            val response = api.discoverMovies(
+                apiKey = BuildConfig.TMDB_API_KEY,
+                withGenres = genreId,
+                page = page
+            )
+            val mapped = response.results.map { it.copy(rawMediaType = "movie") }
+            Result.success(response.copy(results = mapped))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun discoverTvShows(genreId: String?, page: Int = 1): Result<TrendingResponse> = withContext(Dispatchers.IO) {
+        try {
+            val response = api.discoverTvShows(
+                apiKey = BuildConfig.TMDB_API_KEY,
+                withGenres = genreId,
+                page = page
+            )
+            val mapped = response.results.map { it.copy(rawMediaType = "tv") }
+            Result.success(response.copy(results = mapped))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getCategoryItems(
+        categoryType: String,
+        genreId: String? = null,
+        mediaType: String? = null,
+        page: Int = 1
+    ): Result<List<com.creativemedialabs.auraplay.core.network.model.TmdbMediaItem>> = withContext(Dispatchers.IO) {
+        try {
+            val res = when {
+                categoryType == "trending_movies" -> getTrendingMovies(page)
+                categoryType == "blockbuster_movies" -> getPopularMovies(page)
+                categoryType == "top_rated" -> getTopRatedMovies(page)
+                categoryType == "bingeworthy_tv" -> getPopularTvShows(page)
+                categoryType == "trending_tv" -> getTrendingTvShows(page)
+                mediaType == "tv" || categoryType.endsWith("_tv") -> discoverTvShows(genreId, page)
+                else -> discoverMovies(genreId, page)
+            }
+            res.map { resp ->
+                resp.results.filter { !it.posterPath.isNullOrBlank() && it.isReleased }
+            }
         } catch (e: Exception) {
             Result.failure(e)
         }

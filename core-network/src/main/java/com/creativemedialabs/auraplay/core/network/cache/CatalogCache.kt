@@ -8,12 +8,17 @@ import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+
 data class CachedHomeCatalog(
     val spotlightItem: TmdbMediaItem? = null,
     val trendingItems: List<TmdbMediaItem> = emptyList(),
     val top10Movies: List<TmdbMediaItem> = emptyList(),
     val popularMovies: List<TmdbMediaItem> = emptyList(),
     val popularTvShows: List<TmdbMediaItem> = emptyList(),
+    val genreCategories: List<com.creativemedialabs.auraplay.core.network.model.MediaCategory> = emptyList(),
     val timestamp: Long = System.currentTimeMillis()
 )
 
@@ -23,6 +28,7 @@ class CatalogCache @Inject constructor(
     private val gson: Gson
 ) {
     private val cacheFile = File(context.filesDir, "cached_home_catalog.json")
+    private val ioScope = CoroutineScope(Dispatchers.IO)
 
     @Volatile
     private var memoryCache: CachedHomeCatalog? = null
@@ -47,11 +53,13 @@ class CatalogCache @Inject constructor(
 
     fun saveCatalog(catalog: CachedHomeCatalog) {
         memoryCache = catalog
-        try {
-            val json = gson.toJson(catalog)
-            cacheFile.writeText(json)
-        } catch (e: Exception) {
-            // Ignore disk cache write failure
+        ioScope.launch {
+            try {
+                val json = gson.toJson(catalog)
+                cacheFile.writeText(json)
+            } catch (e: Exception) {
+                // Ignore disk cache write failure
+            }
         }
     }
 }

@@ -223,4 +223,13 @@ data class TmdbSeasonDetailResponse(
     val safeEpisodes: List<TmdbEpisodeItem> get() = episodes ?: emptyList()
 }
 
+data class MediaCategory(
+    @SerializedName("id") val id: String,
+    @SerializedName("title") val title: String,
+    @SerializedName("media_type") val mediaType: String = "movie", // "movie", "tv", or "all"
+    @SerializedName("genre_id") val genreId: String? = null,
+    @SerializedName("items") val items: List<TmdbMediaItem> = emptyList()
+)
+
+
 

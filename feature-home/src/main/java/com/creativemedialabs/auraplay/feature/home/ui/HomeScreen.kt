@@ -1,6 +1,6 @@
 package com.creativemedialabs.auraplay.feature.home.ui
 
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -23,8 +23,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -45,6 +47,7 @@ private const val TMDB_BACKDROP_BASE = "https://image.tmdb.org/t/p/w780"
 fun HomeScreen(
     onNavigateToDetails: (Int, String) -> Unit,
     onNavigateToSearch: () -> Unit = {},
+    onNavigateToCategory: (String, String, String?, String) -> Unit = { _, _, _, _ -> },
     isTv: Boolean = false,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
@@ -58,6 +61,7 @@ fun HomeScreen(
     if (detectedTv) {
         TvHomeScreen(
             onNavigateToDetails = onNavigateToDetails,
+            onNavigateToCategory = onNavigateToCategory,
             viewModel = viewModel
         )
         return
@@ -74,11 +78,8 @@ fun HomeScreen(
             .fillMaxSize()
             .background(Color(0xFF070707))
     ) {
-        if (uiState.isLoading) {
-            CircularProgressIndicator(
-                modifier = Modifier.align(Alignment.Center),
-                color = Color(0xFFE50914)
-            )
+        if (uiState.isLoading && uiState.trendingItems.isEmpty()) {
+            HomeSkeletonLoader()
         } else if (uiState.errorMessage != null && uiState.trendingItems.isEmpty()) {
             Column(
                 modifier = Modifier.align(Alignment.Center),
@@ -178,11 +179,18 @@ fun HomeScreen(
                 }
 
                 // Category-Specific Sections:
+                // Category-Specific Sections:
                 if (selectedCategory == "All" || selectedCategory == "Movies") {
                     // Top 10 Movies Today
                     if (uiState.top10Movies.isNotEmpty()) {
                         item {
-                            SectionHeader(title = "Top 10 Movies Today", badge = "TOP 10")
+                            SectionHeader(
+                                title = "Top 10 Movies Today",
+                                badge = "TOP 10",
+                                onSeeAllClick = {
+                                    onNavigateToCategory("Top 10 Movies Today", "top_rated", null, "movie")
+                                }
+                            )
                             LazyRow(
                                 contentPadding = PaddingValues(horizontal = 16.dp),
                                 horizontalArrangement = Arrangement.spacedBy(14.dp)
@@ -194,6 +202,14 @@ fun HomeScreen(
                                         onClick = { onNavigateToDetails(item.id, item.mediaType) }
                                     )
                                 }
+                                item(key = "see_all_top10") {
+                                    ViewAllCard(
+                                        title = "Top 10",
+                                        onClick = {
+                                            onNavigateToCategory("Top 10 Movies Today", "top_rated", null, "movie")
+                                        }
+                                    )
+                                }
                             }
                             Spacer(modifier = Modifier.height(28.dp))
                         }
@@ -203,13 +219,26 @@ fun HomeScreen(
                     val trendingMovies = uiState.trendingItems.filter { !it.isTvShow }
                     if (trendingMovies.isNotEmpty()) {
                         item {
-                            SectionHeader(title = "Trending Movies")
+                            SectionHeader(
+                                title = "Trending Movies",
+                                onSeeAllClick = {
+                                    onNavigateToCategory("Trending Movies", "trending_movies", null, "movie")
+                                }
+                            )
                             LazyRow(
                                 contentPadding = PaddingValues(horizontal = 16.dp),
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
                                 items(trendingMovies, key = { it.id }) { item ->
                                     StandardMediaPosterCard(item = item, onClick = { onNavigateToDetails(item.id, item.mediaType) })
+                                }
+                                item(key = "see_all_trending_movies") {
+                                    ViewAllCard(
+                                        title = "Trending Movies",
+                                        onClick = {
+                                            onNavigateToCategory("Trending Movies", "trending_movies", null, "movie")
+                                        }
+                                    )
                                 }
                             }
                             Spacer(modifier = Modifier.height(28.dp))
@@ -219,13 +248,26 @@ fun HomeScreen(
                     // Blockbuster Movies
                     if (uiState.popularMovies.isNotEmpty()) {
                         item {
-                            SectionHeader(title = "Blockbuster Movies")
+                            SectionHeader(
+                                title = "Blockbuster Movies",
+                                onSeeAllClick = {
+                                    onNavigateToCategory("Blockbuster Movies", "blockbuster_movies", null, "movie")
+                                }
+                            )
                             LazyRow(
                                 contentPadding = PaddingValues(horizontal = 16.dp),
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
                                 items(uiState.popularMovies, key = { it.id }) { item ->
                                     StandardMediaPosterCard(item = item, onClick = { onNavigateToDetails(item.id, item.mediaType) })
+                                }
+                                item(key = "see_all_popular_movies") {
+                                    ViewAllCard(
+                                        title = "Blockbuster",
+                                        onClick = {
+                                            onNavigateToCategory("Blockbuster Movies", "blockbuster_movies", null, "movie")
+                                        }
+                                    )
                                 }
                             }
                             Spacer(modifier = Modifier.height(28.dp))
@@ -237,13 +279,27 @@ fun HomeScreen(
                     // Popular TV Shows
                     if (uiState.popularTvShows.isNotEmpty()) {
                         item {
-                            SectionHeader(title = if (selectedCategory == "TV Shows") "Popular TV Series" else "Bingeworthy TV Shows")
+                            val tvTitle = if (selectedCategory == "TV Shows") "Popular TV Series" else "Bingeworthy TV Shows"
+                            SectionHeader(
+                                title = tvTitle,
+                                onSeeAllClick = {
+                                    onNavigateToCategory("Bingeworthy TV Shows", "bingeworthy_tv", null, "tv")
+                                }
+                            )
                             LazyRow(
                                 contentPadding = PaddingValues(horizontal = 16.dp),
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
                                 items(uiState.popularTvShows, key = { it.id }) { item ->
                                     StandardMediaPosterCard(item = item, onClick = { onNavigateToDetails(item.id, item.mediaType) })
+                                }
+                                item(key = "see_all_popular_tv") {
+                                    ViewAllCard(
+                                        title = "TV Series",
+                                        onClick = {
+                                            onNavigateToCategory("Bingeworthy TV Shows", "bingeworthy_tv", null, "tv")
+                                        }
+                                    )
                                 }
                             }
                             Spacer(modifier = Modifier.height(28.dp))
@@ -254,7 +310,12 @@ fun HomeScreen(
                     val trendingTv = uiState.trendingItems.filter { it.isTvShow }
                     if (trendingTv.isNotEmpty()) {
                         item {
-                            SectionHeader(title = "Trending TV Series")
+                            SectionHeader(
+                                title = "Trending TV Series",
+                                onSeeAllClick = {
+                                    onNavigateToCategory("Trending TV Series", "trending_tv", null, "tv")
+                                }
+                            )
                             LazyRow(
                                 contentPadding = PaddingValues(horizontal = 16.dp),
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -262,10 +323,56 @@ fun HomeScreen(
                                 items(trendingTv, key = { it.id }) { item ->
                                     StandardMediaPosterCard(item = item, onClick = { onNavigateToDetails(item.id, item.mediaType) })
                                 }
+                                item(key = "see_all_trending_tv") {
+                                    ViewAllCard(
+                                        title = "Trending Series",
+                                        onClick = {
+                                            onNavigateToCategory("Trending TV Series", "trending_tv", null, "tv")
+                                        }
+                                    )
+                                }
                             }
                             Spacer(modifier = Modifier.height(28.dp))
                         }
                     }
+                }
+
+                // -------------------------------------------------------------
+                // Rich Genre & Category Rows (Filtered by Category Tab)
+                // -------------------------------------------------------------
+                val filteredGenres = when (selectedCategory) {
+                    "Movies" -> uiState.genreCategories.filter { it.mediaType == "movie" }
+                    "TV Shows" -> uiState.genreCategories.filter { it.mediaType == "tv" }
+                    else -> uiState.genreCategories
+                }
+
+                items(filteredGenres, key = { it.id }) { cat ->
+                    SectionHeader(
+                        title = cat.title,
+                        onSeeAllClick = {
+                            onNavigateToCategory(cat.title, cat.id, cat.genreId, cat.mediaType)
+                        }
+                    )
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        items(cat.items, key = { it.id }) { item ->
+                            StandardMediaPosterCard(
+                                item = item,
+                                onClick = { onNavigateToDetails(item.id, item.mediaType) }
+                            )
+                        }
+                        item(key = "see_all_${cat.id}") {
+                            ViewAllCard(
+                                title = cat.title,
+                                onClick = {
+                                    onNavigateToCategory(cat.title, cat.id, cat.genreId, cat.mediaType)
+                                }
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(28.dp))
                 }
             }
         }
@@ -571,7 +678,11 @@ private fun HeroBillboard(
 }
 
 @Composable
-private fun SectionHeader(title: String, badge: String? = null) {
+private fun SectionHeader(
+    title: String,
+    badge: String? = null,
+    onSeeAllClick: (() -> Unit)? = null
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -598,7 +709,94 @@ private fun SectionHeader(title: String, badge: String? = null) {
             color = Color.White,
             fontSize = 19.sp,
             fontWeight = FontWeight.Bold,
-            letterSpacing = 0.3.sp
+            letterSpacing = 0.3.sp,
+            modifier = Modifier.weight(1f)
+        )
+        if (onSeeAllClick != null) {
+            Text(
+                text = "See All >",
+                color = Color(0xFFE50914),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .clickable { onSeeAllClick() }
+                    .padding(horizontal = 6.dp, vertical = 4.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ViewAllCard(
+    title: String,
+    onClick: () -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isFocused) 1.06f else 1f,
+        animationSpec = tween(durationMillis = 110),
+        label = "view_all_scale"
+    )
+
+    Column(
+        modifier = Modifier
+            .width(120.dp)
+            .height(180.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(RoundedCornerShape(8.dp))
+            .border(
+                BorderStroke(
+                    width = if (isFocused) 2.dp else 1.dp,
+                    color = if (isFocused) Color(0xFFE50914) else Color(0x28FFFFFF)
+                ),
+                shape = RoundedCornerShape(8.dp)
+            )
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(Color(0xFF221215), Color(0xFF141416))
+                )
+            )
+            .focusable(interactionSource = interactionSource)
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
+            .padding(12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(Color(0x22E50914))
+                .border(BorderStroke(1.dp, Color(0x66E50914)), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.ArrowForward,
+                contentDescription = "View all",
+                tint = Color(0xFFE50914),
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = "View All",
+            color = Color.White,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center
+        )
+        Text(
+            text = title,
+            color = Color(0xFF888888),
+            fontSize = 10.sp,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
@@ -610,12 +808,19 @@ private fun StandardMediaPosterCard(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
-    val scale by animateFloatAsState(targetValue = if (isFocused) 1.06f else 1f, label = "poster_scale")
+    val scale by animateFloatAsState(
+        targetValue = if (isFocused) 1.06f else 1f,
+        animationSpec = tween(durationMillis = 110),
+        label = "poster_scale"
+    )
 
     Column(
         modifier = Modifier
             .width(120.dp)
-            .scale(scale)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
             .clip(RoundedCornerShape(8.dp))
             .border(
                 width = if (isFocused) 2.dp else 0.dp,
@@ -696,13 +901,20 @@ private fun Top10NumberedCard(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
-    val scale by animateFloatAsState(targetValue = if (isFocused) 1.06f else 1f, label = "top10_scale")
+    val scale by animateFloatAsState(
+        targetValue = if (isFocused) 1.06f else 1f,
+        animationSpec = tween(durationMillis = 110),
+        label = "top10_scale"
+    )
 
     Box(
         modifier = Modifier
             .width(150.dp)
             .height(180.dp)
-            .scale(scale)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
             .clip(RoundedCornerShape(8.dp))
             .border(
                 width = if (isFocused) 2.dp else 0.dp,
@@ -753,7 +965,11 @@ private fun ContinueWatchingCard(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
-    val scale by animateFloatAsState(targetValue = if (isFocused) 1.06f else 1f, label = "cw_scale")
+    val scale by animateFloatAsState(
+        targetValue = if (isFocused) 1.06f else 1f,
+        animationSpec = tween(durationMillis = 110),
+        label = "cw_scale"
+    )
 
     val progressFraction = if (item.durationMs > 0) {
         (item.progressMs.toFloat() / item.durationMs).coerceIn(0.05f, 1f)
@@ -762,7 +978,10 @@ private fun ContinueWatchingCard(
     Column(
         modifier = Modifier
             .width(140.dp)
-            .scale(scale)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
             .clip(RoundedCornerShape(8.dp))
             .border(
                 width = if (isFocused) 2.dp else 0.dp,
@@ -825,5 +1044,146 @@ private fun ContinueWatchingCard(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
+    }
+}
+
+@Composable
+private fun HomeSkeletonLoader() {
+    val transition = rememberInfiniteTransition(label = "home_skeleton_shimmer")
+    val translateAnim by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1400f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1300, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "home_shimmer_translate"
+    )
+
+    val shimmerBrush = Brush.linearGradient(
+        colors = listOf(
+            Color(0xFF141414),
+            Color(0xFF282828),
+            Color(0xFF141414)
+        ),
+        start = Offset(translateAnim - 450f, translateAnim - 450f),
+        end = Offset(translateAnim, translateAnim)
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF070707))
+    ) {
+        // Spotlight Billboard Skeleton
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(420.dp)
+                .background(shimmerBrush)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Transparent, Color(0xF2070707)),
+                            startY = 200f
+                        )
+                    )
+            )
+
+            // Brand & Status indicator at bottom
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 20.dp, bottom = 24.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        color = Color(0xFFE50914),
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "Curating Cinema Catalog...",
+                        color = Color(0xFFE50914),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Box(
+                    modifier = Modifier
+                        .width(260.dp)
+                        .height(30.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0x44FFFFFF))
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Box(
+                    modifier = Modifier
+                        .width(180.dp)
+                        .height(14.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(Color(0x22FFFFFF))
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .width(96.dp)
+                            .height(38.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color(0x77FFFFFF))
+                    )
+                    Box(
+                        modifier = Modifier
+                            .width(96.dp)
+                            .height(38.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color(0x33FFFFFF))
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Box(
+            modifier = Modifier
+                .padding(start = 20.dp)
+                .width(140.dp)
+                .height(18.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(Color(0x33FFFFFF))
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            repeat(5) {
+                Box(
+                    modifier = Modifier
+                        .width(120.dp)
+                        .height(175.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(shimmerBrush)
+                )
+            }
+        }
     }
 }

@@ -51,6 +51,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -70,6 +71,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
@@ -636,11 +638,74 @@ fun ExoPlayerStreamPlayer(
                         else -> null
                     }
 
+                    val subtitleConfigs = mutableListOf<MediaItem.SubtitleConfiguration>()
+                    if (isLocalFile) {
+                        try {
+                            val localFile = if (videoUrl.startsWith("file://")) {
+                                java.io.File(videoUrl.removePrefix("file://"))
+                            } else {
+                                java.io.File(videoUrl)
+                            }
+                            val parentDir = localFile.parentFile
+                            if (parentDir != null && parentDir.exists() && parentDir.isDirectory) {
+                                val subFiles = parentDir.listFiles { f ->
+                                    val n = f.name.lowercase()
+                                    f.isFile && (n.endsWith(".srt") || n.endsWith(".vtt") || n.endsWith(".sub"))
+                                } ?: emptyArray()
+                                for (subFile in subFiles) {
+                                    val subMime = if (subFile.name.endsWith(".vtt", ignoreCase = true)) MimeTypes.TEXT_VTT else MimeTypes.APPLICATION_SUBRIP
+                                    val subName = subFile.nameWithoutExtension
+                                        .removePrefix(localFile.nameWithoutExtension)
+                                        .trim('_', '-', '.', ' ')
+                                        .ifBlank { "Subtitle ${subtitleConfigs.size + 1}" }
+                                    val subLang = when {
+                                        subName.contains("eng", ignoreCase = true) || subName.contains("en", ignoreCase = true) -> "en"
+                                        subName.contains("spa", ignoreCase = true) || subName.contains("es", ignoreCase = true) -> "es"
+                                        subName.contains("fre", ignoreCase = true) || subName.contains("fr", ignoreCase = true) -> "fr"
+                                        subName.contains("ger", ignoreCase = true) || subName.contains("de", ignoreCase = true) -> "de"
+                                        subName.contains("hin", ignoreCase = true) || subName.contains("hi", ignoreCase = true) -> "hi"
+                                        else -> null
+                                    }
+                                    subtitleConfigs.add(
+                                        MediaItem.SubtitleConfiguration.Builder(android.net.Uri.fromFile(subFile))
+                                            .setMimeType(subMime)
+                                            .setLabel(subName)
+                                            .setLanguage(subLang)
+                                            .build()
+                                    )
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.w("PlayerScreen", "Error scanning local subtitles", e)
+                        }
+                    }
+
+                    try {
+                        val subParam = android.net.Uri.parse(videoUrl).getQueryParameter("subtitle")
+                            ?: android.net.Uri.parse(videoUrl).getQueryParameter("sub")
+                        if (!subParam.isNullOrBlank()) {
+                            val subUri = android.net.Uri.parse(subParam)
+                            val subMime = if (subParam.endsWith(".vtt", ignoreCase = true)) MimeTypes.TEXT_VTT else MimeTypes.APPLICATION_SUBRIP
+                            subtitleConfigs.add(
+                                MediaItem.SubtitleConfiguration.Builder(subUri)
+                                    .setMimeType(subMime)
+                                    .setLabel("English")
+                                    .setLanguage("en")
+                                    .build()
+                            )
+                        }
+                    } catch (e: Exception) {
+                        // ignore query param error
+                    }
+
                     val mediaItem = MediaItem.Builder()
                         .setUri(uri)
                         .apply {
                             if (mimeType != null) {
                                 setMimeType(mimeType)
+                            }
+                            if (subtitleConfigs.isNotEmpty()) {
+                                setSubtitleConfigurations(subtitleConfigs)
                             }
                         }
                         .build()
@@ -728,6 +793,7 @@ fun ExoPlayerStreamPlayer(
     // Gesture indicator values
     var gestureIndicatorText by remember { mutableStateOf<String?>(null) }
     var showTrackDialog by remember { mutableStateOf(false) }
+    var currentTracks by remember { mutableStateOf(exoPlayer.currentTracks) }
 
     // Clear gesture indicator after delay
     LaunchedEffect(gestureIndicatorText) {
@@ -741,6 +807,8 @@ fun ExoPlayerStreamPlayer(
     DisposableEffect(exoPlayer) {
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) { isPlaying = playWhenReady }
+            override fun onTracksChanged(tracks: androidx.media3.common.Tracks) { currentTracks = tracks }
             override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
                 if (exoPlayer.duration > 0) {
                     totalDuration = exoPlayer.duration
@@ -849,20 +917,17 @@ fun ExoPlayerStreamPlayer(
                             }
                         }
                         Key.MediaPlayPause -> {
-                            if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
-                            isPlaying = !isPlaying
+                            if (exoPlayer.playWhenReady) exoPlayer.pause() else exoPlayer.play()
                             showControls = true
                             true
                         }
                         Key.MediaPlay -> {
                             exoPlayer.play()
-                            isPlaying = true
                             showControls = true
                             true
                         }
                         Key.MediaPause -> {
                             exoPlayer.pause()
-                            isPlaying = false
                             showControls = true
                             true
                         }
@@ -1075,8 +1140,11 @@ fun ExoPlayerStreamPlayer(
                         onBack()
                     },
                     onPlayPause = {
-                        if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
-                        isPlaying = !isPlaying
+                        if (exoPlayer.playWhenReady) {
+                            exoPlayer.pause()
+                        } else {
+                            exoPlayer.play()
+                        }
                     },
                     onSeekRelative = { deltaMs ->
                         val maxDur = if (exoPlayer.duration > 0) exoPlayer.duration else if (totalDuration > 1000L) totalDuration else Long.MAX_VALUE
@@ -1126,6 +1194,7 @@ fun ExoPlayerStreamPlayer(
     if (showTrackDialog) {
         TrackSelectionDialog(
             exoPlayer = exoPlayer,
+            currentTracks = currentTracks,
             onDismiss = { showTrackDialog = false }
         )
     }
@@ -1474,15 +1543,36 @@ private fun BoxScope.PlayerControlsOverlay(
     }
 }
 
+private data class PlayerTrackItem(
+    val displayName: String,
+    val language: String?,
+    val isSelected: Boolean,
+    val isDefaultOrOff: Boolean = false,
+    val override: TrackSelectionOverride? = null
+)
+
 @Composable
 private fun TrackSelectionDialog(
     exoPlayer: ExoPlayer,
+    currentTracks: androidx.media3.common.Tracks,
     onDismiss: () -> Unit
 ) {
-    val audioTracks = remember(exoPlayer) {
-        val tracks = mutableListOf<Pair<String, String?>>()
-        tracks.add("Auto / Default" to null)
-        for (group in exoPlayer.currentTracks.groups) {
+    var selectedTab by remember { mutableIntStateOf(0) } // 0 = Audio, 1 = Subtitles
+
+    val audioTracks = remember(currentTracks, exoPlayer.trackSelectionParameters) {
+        val list = mutableListOf<PlayerTrackItem>()
+        val hasAudioOverride = exoPlayer.trackSelectionParameters.overrides.any { it.value.type == C.TRACK_TYPE_AUDIO }
+        val isAutoSelected = !hasAudioOverride && exoPlayer.trackSelectionParameters.preferredAudioLanguages.isEmpty()
+        list.add(
+            PlayerTrackItem(
+                displayName = "Auto / Default",
+                language = null,
+                isSelected = isAutoSelected,
+                isDefaultOrOff = true
+            )
+        )
+
+        for (group in currentTracks.groups) {
             if (group.type == C.TRACK_TYPE_AUDIO) {
                 for (i in 0 until group.length) {
                     val format = group.getTrackFormat(i)
@@ -1495,38 +1585,220 @@ private fun TrackSelectionDialog(
                             val display = locale.getDisplayLanguage(java.util.Locale.ENGLISH)
                             if (display.isNotBlank()) display else lang.uppercase()
                         }
-                        else -> "Audio Track ${tracks.size}"
+                        else -> "Audio Track ${list.size}"
                     }
-                    if (tracks.none { it.first == name }) {
-                        tracks.add(name to lang)
-                    }
+                    val isSelected = group.isTrackSelected(i)
+                    val override = TrackSelectionOverride(group.mediaTrackGroup, i)
+                    list.add(
+                        PlayerTrackItem(
+                            displayName = name,
+                            language = lang,
+                            isSelected = isSelected,
+                            override = override
+                        )
+                    )
                 }
             }
         }
-        tracks
+        list
+    }
+
+    val subtitleTracks = remember(currentTracks, exoPlayer.trackSelectionParameters) {
+        val list = mutableListOf<PlayerTrackItem>()
+        val isSubDisabled = exoPlayer.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)
+        val hasSubGroupSelected = currentTracks.groups.any { group ->
+            group.type == C.TRACK_TYPE_TEXT && (0 until group.length).any { group.isTrackSelected(it) }
+        }
+        val isOffSelected = isSubDisabled || !hasSubGroupSelected
+
+        list.add(
+            PlayerTrackItem(
+                displayName = "Off",
+                language = null,
+                isSelected = isOffSelected,
+                isDefaultOrOff = true
+            )
+        )
+
+        for (group in currentTracks.groups) {
+            if (group.type == C.TRACK_TYPE_TEXT) {
+                for (i in 0 until group.length) {
+                    val format = group.getTrackFormat(i)
+                    val lang = format.language
+                    val label = format.label
+                    val name = when {
+                        !label.isNullOrBlank() -> label
+                        !lang.isNullOrBlank() -> {
+                            val locale = java.util.Locale(lang)
+                            val display = locale.getDisplayLanguage(java.util.Locale.ENGLISH)
+                            if (display.isNotBlank()) display else lang.uppercase()
+                        }
+                        else -> "Subtitle ${list.size}"
+                    }
+                    val isSelected = !isSubDisabled && group.isTrackSelected(i)
+                    val override = TrackSelectionOverride(group.mediaTrackGroup, i)
+                    list.add(
+                        PlayerTrackItem(
+                            displayName = name,
+                            language = lang,
+                            isSelected = isSelected,
+                            override = override
+                        )
+                    )
+                }
+            }
+        }
+        list
     }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Audio & Subtitle Tracks", color = Color.White, fontWeight = FontWeight.Bold) },
+        title = {
+            Text(
+                text = "Audio & Subtitles",
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp
+            )
+        },
         text = {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Text("Select Available Audio Track", color = Color.Gray, fontSize = 13.sp)
-                Spacer(modifier = Modifier.height(10.dp))
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    items(audioTracks) { (displayName, langCode) ->
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+            ) {
+                // Tab Selection (Audio | Subtitles)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF2B2B2B), shape = RoundedCornerShape(10.dp))
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Audio Tab
+                    val audioInteraction = remember { MutableInteractionSource() }
+                    val isAudioTabFocused by audioInteraction.collectIsFocusedAsState()
+                    val isAudioActive = selectedTab == 0
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(
+                                if (isAudioActive) Color(0xFFE50914)
+                                else if (isAudioTabFocused) Color(0x44FFFFFF)
+                                else Color.Transparent
+                            )
+                            .border(
+                                width = if (isAudioTabFocused && !isAudioActive) 2.dp else 0.dp,
+                                color = if (isAudioTabFocused) Color.White else Color.Transparent,
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .clickable(interactionSource = audioInteraction, indication = null) {
+                                selectedTab = 0
+                            }
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.Audiotrack,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Audio (${if (audioTracks.size > 1) audioTracks.size - 1 else 1})",
+                                color = Color.White,
+                                fontWeight = if (isAudioActive) FontWeight.Bold else FontWeight.Medium,
+                                fontSize = 13.sp
+                            )
+                        }
+                    }
+
+                    // Subtitles Tab
+                    val subInteraction = remember { MutableInteractionSource() }
+                    val isSubTabFocused by subInteraction.collectIsFocusedAsState()
+                    val isSubActive = selectedTab == 1
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(
+                                if (isSubActive) Color(0xFFE50914)
+                                else if (isSubTabFocused) Color(0x44FFFFFF)
+                                else Color.Transparent
+                            )
+                            .border(
+                                width = if (isSubTabFocused && !isSubActive) 2.dp else 0.dp,
+                                color = if (isSubTabFocused) Color.White else Color.Transparent,
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .clickable(interactionSource = subInteraction, indication = null) {
+                                selectedTab = 1
+                            }
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.Subtitles,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Subtitles (${if (subtitleTracks.size > 1) subtitleTracks.size - 1 else 0})",
+                                color = Color.White,
+                                fontWeight = if (isSubActive) FontWeight.Bold else FontWeight.Medium,
+                                fontSize = 13.sp
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                val currentList = if (selectedTab == 0) audioTracks else subtitleTracks
+
+                if (selectedTab == 1 && subtitleTracks.size <= 1) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "No subtitles found for this stream/file",
+                            color = Color.Gray,
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 280.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(currentList) { item ->
                         val trackInteraction = remember { MutableInteractionSource() }
                         val isTrackFocused by trackInteraction.collectIsFocusedAsState()
+
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
                                 .background(
-                                    color = if (isTrackFocused) Color(0xFFE50914) else Color(0x22FFFFFF),
-                                    shape = RoundedCornerShape(8.dp)
+                                    color = if (isTrackFocused) Color(0xFFE50914)
+                                    else if (item.isSelected) Color(0x33E50914)
+                                    else Color(0x1AFFFFFF)
                                 )
                                 .border(
-                                    width = if (isTrackFocused) 2.dp else 0.dp,
-                                    color = if (isTrackFocused) Color.White else Color.Transparent,
+                                    width = if (isTrackFocused) 2.dp else if (item.isSelected) 1.dp else 0.dp,
+                                    color = if (isTrackFocused) Color.White else if (item.isSelected) Color(0xFFE50914) else Color.Transparent,
                                     shape = RoundedCornerShape(8.dp)
                                 )
                                 .clickable(
@@ -1534,29 +1806,73 @@ private fun TrackSelectionDialog(
                                     indication = null
                                 ) {
                                     val params = exoPlayer.trackSelectionParameters.buildUpon()
-                                    if (langCode != null) {
-                                        params.setPreferredAudioLanguage(langCode)
+                                    if (selectedTab == 0) {
+                                        // Audio track selection
+                                        if (item.isDefaultOrOff) {
+                                            params.clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                                            params.setPreferredAudioLanguage(null)
+                                        } else {
+                                            params.clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                                            if (item.override != null) {
+                                                params.setOverrideForType(item.override)
+                                            }
+                                            if (item.language != null) {
+                                                params.setPreferredAudioLanguage(item.language)
+                                            }
+                                        }
                                     } else {
-                                        params.setPreferredAudioLanguage(null)
+                                        // Subtitle track selection
+                                        if (item.isDefaultOrOff) {
+                                            params.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                                            params.clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                                        } else {
+                                            params.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                                            params.clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                                            if (item.override != null) {
+                                                params.setOverrideForType(item.override)
+                                            }
+                                            if (item.language != null) {
+                                                params.setPreferredTextLanguage(item.language)
+                                            }
+                                        }
                                     }
                                     exoPlayer.trackSelectionParameters = params.build()
-                                    onDismiss()
                                 }
                                 .padding(horizontal = 14.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                Icons.Default.Audiotrack,
-                                contentDescription = null,
-                                tint = if (isTrackFocused) Color.White else Color(0xFFE50914)
-                            )
+                            if (item.isSelected) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Selected",
+                                    tint = if (isTrackFocused) Color.White else Color(0xFFE50914),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            } else {
+                                Spacer(modifier = Modifier.size(20.dp))
+                            }
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
-                                text = displayName,
+                                text = item.displayName,
                                 color = Color.White,
                                 fontSize = 15.sp,
-                                fontWeight = if (isTrackFocused) FontWeight.Bold else FontWeight.Normal
+                                fontWeight = if (item.isSelected || isTrackFocused) FontWeight.Bold else FontWeight.Normal,
+                                modifier = Modifier.weight(1f)
                             )
+                            if (!item.language.isNullOrBlank() && !item.isDefaultOrOff) {
+                                Surface(
+                                    color = Color(0x33FFFFFF),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        text = item.language.uppercase(),
+                                        color = Color.LightGray,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }

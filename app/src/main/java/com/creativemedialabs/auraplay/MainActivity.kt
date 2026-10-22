@@ -41,6 +41,7 @@ import com.creativemedialabs.auraplay.feature.downloads.notification.DownloadNot
 import com.creativemedialabs.auraplay.feature.downloads.notification.InAppNotificationBanner
 import com.creativemedialabs.auraplay.feature.downloads.notification.InAppNotificationManager
 import com.creativemedialabs.auraplay.feature.downloads.ui.DownloadsScreen
+import com.creativemedialabs.auraplay.feature.home.ui.CategoryViewAllScreen
 import com.creativemedialabs.auraplay.feature.home.ui.HomeScreen
 import com.creativemedialabs.auraplay.feature.home.ui.NewAndHotScreen
 import com.creativemedialabs.auraplay.feature.home.ui.SearchScreen
@@ -260,6 +261,33 @@ private fun AuraPlayApp(
                             onNavigateToSearch = {
                                 navController.navigate("search")
                             },
+                            onNavigateToCategory = { title, categoryType, genreId, mediaType ->
+                                val encTitle = URLEncoder.encode(title, StandardCharsets.UTF_8.toString())
+                                val encType = URLEncoder.encode(categoryType, StandardCharsets.UTF_8.toString())
+                                val encGenre = URLEncoder.encode(genreId ?: "", StandardCharsets.UTF_8.toString())
+                                navController.navigate("category_view_all?title=$encTitle&categoryType=$encType&genreId=$encGenre&mediaType=$mediaType")
+                            },
+                            isTv = true
+                        )
+                    }
+                    composable("category_view_all?title={title}&categoryType={categoryType}&genreId={genreId}&mediaType={mediaType}") { backStackEntry ->
+                        val rawTitle = backStackEntry.arguments?.getString("title") ?: "Catalog"
+                        val title = URLDecoder.decode(rawTitle, StandardCharsets.UTF_8.toString())
+                        val rawType = backStackEntry.arguments?.getString("categoryType") ?: "trending"
+                        val categoryType = URLDecoder.decode(rawType, StandardCharsets.UTF_8.toString())
+                        val rawGenre = backStackEntry.arguments?.getString("genreId")
+                        val genreId = if (rawGenre.isNullOrBlank()) null else URLDecoder.decode(rawGenre, StandardCharsets.UTF_8.toString())
+                        val mediaType = backStackEntry.arguments?.getString("mediaType") ?: "movie"
+
+                        CategoryViewAllScreen(
+                            title = title,
+                            categoryType = categoryType,
+                            genreId = genreId,
+                            mediaType = mediaType,
+                            onNavigateToDetails = { mediaId, type ->
+                                navController.navigate("details/$mediaId?type=$type")
+                            },
+                            onBack = { navController.popBackStack() },
                             isTv = true
                         )
                     }
@@ -427,6 +455,33 @@ private fun AuraPlayApp(
                             onNavigateToSearch = {
                                 navController.navigate("search")
                             },
+                            onNavigateToCategory = { title, categoryType, genreId, mediaType ->
+                                val encTitle = URLEncoder.encode(title, StandardCharsets.UTF_8.toString())
+                                val encType = URLEncoder.encode(categoryType, StandardCharsets.UTF_8.toString())
+                                val encGenre = URLEncoder.encode(genreId ?: "", StandardCharsets.UTF_8.toString())
+                                navController.navigate("category_view_all?title=$encTitle&categoryType=$encType&genreId=$encGenre&mediaType=$mediaType")
+                            },
+                            isTv = false
+                        )
+                    }
+                    composable("category_view_all?title={title}&categoryType={categoryType}&genreId={genreId}&mediaType={mediaType}") { backStackEntry ->
+                        val rawTitle = backStackEntry.arguments?.getString("title") ?: "Catalog"
+                        val title = URLDecoder.decode(rawTitle, StandardCharsets.UTF_8.toString())
+                        val rawType = backStackEntry.arguments?.getString("categoryType") ?: "trending"
+                        val categoryType = URLDecoder.decode(rawType, StandardCharsets.UTF_8.toString())
+                        val rawGenre = backStackEntry.arguments?.getString("genreId")
+                        val genreId = if (rawGenre.isNullOrBlank()) null else URLDecoder.decode(rawGenre, StandardCharsets.UTF_8.toString())
+                        val mediaType = backStackEntry.arguments?.getString("mediaType") ?: "movie"
+
+                        CategoryViewAllScreen(
+                            title = title,
+                            categoryType = categoryType,
+                            genreId = genreId,
+                            mediaType = mediaType,
+                            onNavigateToDetails = { mediaId, type ->
+                                navController.navigate("details/$mediaId?type=$type")
+                            },
+                            onBack = { navController.popBackStack() },
                             isTv = false
                         )
                     }

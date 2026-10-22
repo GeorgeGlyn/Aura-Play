@@ -107,11 +107,23 @@ const App = {
             });
 
             TMDB.getMoviesByGenre(28).then(actionMovies => {
-                if (actionMovies) this.renderRow("row-action", "Action & Thrillers", actionMovies);
+                if (actionMovies) this.renderRow("row-action", "Action & Thrillers", actionMovies, "Action");
+            });
+
+            TMDB.getMoviesByGenre(878).then(sciFi => {
+                if (sciFi) this.renderRow("row-scifi", "Sci-Fi & Fantasy", sciFi, "Sci-Fi");
             });
 
             TMDB.getMoviesByGenre(35).then(comedyMovies => {
-                if (comedyMovies) this.renderRow("row-comedy", "Top Comedies", comedyMovies);
+                if (comedyMovies) this.renderRow("row-comedy", "Top Comedies", comedyMovies, "Comedy");
+            });
+
+            TMDB.getMoviesByGenre(16).then(anim => {
+                if (anim) this.renderRow("row-animation", "Animation & Anime", anim, "Animation");
+            });
+
+            TMDB.getMoviesByGenre(27).then(horror => {
+                if (horror) this.renderRow("row-horror", "Horror & Suspense", horror, "Horror");
             });
         } catch (err) {
             console.error("Failed to load home content:", err);
@@ -167,7 +179,7 @@ const App = {
         infoBtn.onclick = () => this.openDetails(media);
     },
 
-    renderRow(rowId, title, items) {
+    renderRow(rowId, title, items, searchQuery = null) {
         let rowContainer = document.getElementById(rowId);
         if (!rowContainer) {
             const rowsWrapper = document.getElementById("carousel-rows");
@@ -178,7 +190,10 @@ const App = {
         }
 
         rowContainer.innerHTML = `
-            <h2 class="carousel-title">${title}</h2>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                <h2 class="carousel-title" style="margin-bottom:0;">${title}</h2>
+                <span class="row-see-all focusable" tabindex="0" style="color:var(--primary,#e50914);cursor:pointer;font-size:13px;font-weight:600;padding:4px 8px;">See All &rsaquo;</span>
+            </div>
             <div class="carousel-items">
                 ${items.filter(item => item.poster_path).map(item => `
                     <div class="media-card focusable" tabindex="0" data-id="${item.id}" data-type="${item.media_type || (item.title ? 'movie' : 'tv')}">
@@ -189,11 +204,32 @@ const App = {
                         </div>
                     </div>
                 `).join("")}
+                <div class="media-card card-view-all focusable" tabindex="0" style="display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(135deg, #221215, #141416);border:1px solid rgba(255,255,255,0.15);border-radius:8px;min-width:130px;height:195px;text-align:center;cursor:pointer;">
+                    <div style="width:40px;height:40px;border-radius:50%;background:rgba(229,9,20,0.15);border:1px solid rgba(229,9,20,0.4);display:flex;align-items:center;justify-content:center;margin-bottom:8px;font-size:18px;color:#e50914;">➔</div>
+                    <div style="font-weight:700;font-size:13px;color:#fff;">View All</div>
+                    <div style="font-size:11px;color:#888;">Explore More</div>
+                </div>
             </div>
         `;
 
+        const viewAllHandler = () => {
+            const query = searchQuery || title.replace("Movies", "").replace("Series", "").replace("TV Shows", "").replace("Now", "").trim();
+            this.switchTab("search");
+            const searchInput = document.getElementById("search-input");
+            if (searchInput) {
+                searchInput.value = query;
+                this.performSearch(query);
+            }
+        };
+
+        const seeAllBtn = rowContainer.querySelector(".row-see-all");
+        if (seeAllBtn) seeAllBtn.addEventListener("click", viewAllHandler);
+
+        const viewAllCard = rowContainer.querySelector(".card-view-all");
+        if (viewAllCard) viewAllCard.addEventListener("click", viewAllHandler);
+
         // Add click events to cards
-        rowContainer.querySelectorAll(".media-card").forEach(card => {
+        rowContainer.querySelectorAll(".media-card:not(.card-view-all)").forEach(card => {
             const id = card.dataset.id;
             const type = card.dataset.type;
             const media = items.find(i => i.id == id) || { id, media_type: type };

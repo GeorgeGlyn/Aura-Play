@@ -63,6 +63,14 @@ const TMDB = {
         return data?.results || [];
     },
 
+    async getTvByGenre(genreId) {
+        const data = await this.request("/discover/tv", {
+            with_genres: genreId,
+            sort_by: "popularity.desc"
+        });
+        return (data?.results || []).map(item => ({ ...item, media_type: "tv" }));
+    },
+
     async search(query) {
         if (!query || !query.trim()) return [];
         const data = await this.request("/search/multi", {
