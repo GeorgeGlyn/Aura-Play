@@ -27,12 +27,18 @@ import android.widget.FrameLayout
 import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -45,7 +51,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -58,10 +68,12 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -243,10 +255,32 @@ fun WebStreamPlayer(
         }
     }
 
+    val webFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        try {
+            webFocusRequester.requestFocus()
+        } catch (e: Exception) {
+            // ignore
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
+            .focusRequester(webFocusRequester)
+            .focusable()
+            .onPreviewKeyEvent { keyEvent ->
+                if (keyEvent.type == KeyEventType.KeyUp) {
+                    when (keyEvent.key) {
+                        Key.DirectionCenter, Key.Enter, Key.DirectionUp, Key.DirectionDown -> {
+                            showOverlay = true
+                            true
+                        }
+                        else -> false
+                    }
+                } else false
+            }
     ) {
         if (customView != null) {
             AndroidView(
@@ -543,7 +577,11 @@ fun ExoPlayerStreamPlayer(
         (context.getSystemService(Context.UI_MODE_SERVICE) as? android.app.UiModeManager)?.currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
     }
 
-    // Build ExoPlayer with DefaultMediaSourceFactory and NetMirror HTTP headers
+    val isLocalFile = remember(videoUrl) {
+        videoUrl.startsWith("/") || videoUrl.startsWith("file://")
+    }
+
+    // Build ExoPlayer with fast start buffer durations and NetMirror HTTP headers
     val exoPlayer = remember {
         val httpDataSourceFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
             .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:136.0) Gecko/20100101 Firefox/136.0 /OS.GatuNewTV v1.0")
@@ -552,9 +590,26 @@ fun ExoPlayerStreamPlayer(
             )
             .setAllowCrossProtocolRedirects(true)
         val dataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
+
         val extractorsFactory = androidx.media3.extractor.DefaultExtractorsFactory()
-            .setConstantBitrateSeekingEnabled(true)
+        // Only enable constant bitrate seeking for remote streams; disable for local files to eliminate startup pre-scan latency
+        if (!isLocalFile) {
+            extractorsFactory.setConstantBitrateSeekingEnabled(true)
+        }
+
+        // Low latency buffer configuration for instant playback (especially for local downloaded files)
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                /* minBufferMs = */ if (isLocalFile) 1000 else 2500,
+                /* maxBufferMs = */ if (isLocalFile) 10000 else 30000,
+                /* bufferForPlaybackMs = */ if (isLocalFile) 150 else 500,
+                /* bufferForPlaybackAfterRebufferMs = */ if (isLocalFile) 300 else 1000
+            )
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .build()
+
         ExoPlayer.Builder(context)
+            .setLoadControl(loadControl)
             .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory))
             .build()
             .apply {
@@ -564,12 +619,33 @@ fun ExoPlayerStreamPlayer(
                         onError()
                         return@apply
                     }
-                    val uri = if (videoUrl.startsWith("/")) {
+                    val cleanPath = videoUrl.substringBefore('?')
+                    val uri = if (videoUrl.startsWith("file://")) {
+                        android.net.Uri.fromFile(java.io.File(videoUrl.removePrefix("file://")))
+                    } else if (videoUrl.startsWith("/")) {
                         android.net.Uri.fromFile(java.io.File(videoUrl))
                     } else {
                         android.net.Uri.parse(videoUrl)
                     }
-                    setMediaItem(MediaItem.fromUri(uri))
+
+                    val mimeType = when {
+                        cleanPath.endsWith(".m3u8", ignoreCase = true) || cleanPath.contains(".m3u8") -> MimeTypes.APPLICATION_M3U8
+                        cleanPath.endsWith(".mp4", ignoreCase = true) -> MimeTypes.APPLICATION_MP4
+                        cleanPath.endsWith(".mkv", ignoreCase = true) -> MimeTypes.APPLICATION_MATROSKA
+                        cleanPath.endsWith(".mpd", ignoreCase = true) -> MimeTypes.APPLICATION_MPD
+                        else -> null
+                    }
+
+                    val mediaItem = MediaItem.Builder()
+                        .setUri(uri)
+                        .apply {
+                            if (mimeType != null) {
+                                setMimeType(mimeType)
+                            }
+                        }
+                        .build()
+
+                    setMediaItem(mediaItem)
                     prepare()
                     playWhenReady = true
                 } catch (e: Exception) {
@@ -700,11 +776,57 @@ fun ExoPlayerStreamPlayer(
         }
     }
 
-    // Auto-hide controls after 4s
-    LaunchedEffect(showControls) {
+    // TV Focus Requesters & Activity Reset
+    val playerFocusRequester = remember { FocusRequester() }
+    val centerPlayFocusRequester = remember { FocusRequester() }
+
+    var lastInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    val resetControlsTimer: () -> Unit = {
+        lastInteractionTime = System.currentTimeMillis()
+    }
+
+    // Auto-hide controls after 7s on TV, 4s on Mobile
+    LaunchedEffect(showControls, lastInteractionTime) {
         if (showControls && !isScreenLocked) {
-            delay(4000)
+            delay(if (isTvDevice) 7000L else 4000L)
             showControls = false
+        }
+    }
+
+    // TV / Device Back button handler: hide overlay controls first if visible
+    BackHandler {
+        if (showControls) {
+            showControls = false
+        } else {
+            exoPlayer.release()
+            onBack()
+        }
+    }
+
+    // Initial focus on the player root
+    LaunchedEffect(Unit) {
+        try {
+            playerFocusRequester.requestFocus()
+        } catch (e: Exception) {
+            // ignore
+        }
+    }
+
+    // When controls appear on TV, focus the center Play/Pause button for immediate D-pad control
+    LaunchedEffect(showControls) {
+        if (showControls && isTvDevice) {
+            delay(150)
+            try {
+                centerPlayFocusRequester.requestFocus()
+            } catch (e: Exception) {
+                // ignore
+            }
+        } else if (!showControls && isTvDevice) {
+            try {
+                playerFocusRequester.requestFocus()
+            } catch (e: Exception) {
+                // ignore
+            }
         }
     }
 
@@ -712,6 +834,102 @@ fun ExoPlayerStreamPlayer(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
+            .focusRequester(playerFocusRequester)
+            .focusable()
+            .onPreviewKeyEvent { keyEvent ->
+                if (keyEvent.type == KeyEventType.KeyUp) {
+                    resetControlsTimer()
+                    when (keyEvent.key) {
+                        Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
+                            if (!showControls) {
+                                showControls = true
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        Key.MediaPlayPause -> {
+                            if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
+                            isPlaying = !isPlaying
+                            showControls = true
+                            true
+                        }
+                        Key.MediaPlay -> {
+                            exoPlayer.play()
+                            isPlaying = true
+                            showControls = true
+                            true
+                        }
+                        Key.MediaPause -> {
+                            exoPlayer.pause()
+                            isPlaying = false
+                            showControls = true
+                            true
+                        }
+                        Key.MediaFastForward -> {
+                            val maxDur = if (exoPlayer.duration > 0) exoPlayer.duration else if (totalDuration > 1000L) totalDuration else Long.MAX_VALUE
+                            val target = (exoPlayer.currentPosition + 10_000).coerceAtMost(maxDur)
+                            exoPlayer.seekTo(target)
+                            currentPosition = target
+                            gestureIndicatorText = "+10s Fast Forward"
+                            showControls = true
+                            true
+                        }
+                        Key.MediaRewind -> {
+                            val target = (exoPlayer.currentPosition - 10_000).coerceAtLeast(0L)
+                            exoPlayer.seekTo(target)
+                            currentPosition = target
+                            gestureIndicatorText = "-10s Rewind"
+                            showControls = true
+                            true
+                        }
+                        Key.DirectionLeft -> {
+                            if (!showControls) {
+                                val target = (exoPlayer.currentPosition - 10_000).coerceAtLeast(0L)
+                                exoPlayer.seekTo(target)
+                                currentPosition = target
+                                gestureIndicatorText = "-10s Rewind"
+                                showControls = true
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        Key.DirectionRight -> {
+                            if (!showControls) {
+                                val maxDur = if (exoPlayer.duration > 0) exoPlayer.duration else if (totalDuration > 1000L) totalDuration else Long.MAX_VALUE
+                                val target = (exoPlayer.currentPosition + 10_000).coerceAtMost(maxDur)
+                                exoPlayer.seekTo(target)
+                                currentPosition = target
+                                gestureIndicatorText = "+10s Fast Forward"
+                                showControls = true
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        Key.DirectionUp, Key.DirectionDown -> {
+                            if (!showControls) {
+                                showControls = true
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        Key.Back, Key.Escape -> {
+                            if (showControls) {
+                                showControls = false
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        else -> false
+                    }
+                } else {
+                    false
+                }
+            }
             .then(
                 if (!isInPipMode) {
                     Modifier
@@ -827,13 +1045,14 @@ fun ExoPlayerStreamPlayer(
 
             // Screen Lock Indicator when Locked
             if (isScreenLocked && showControls) {
-                IconButton(
+                TvPlayerIconButton(
                     onClick = { isScreenLocked = false },
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .statusBarsPadding()
                         .padding(20.dp)
-                        .background(Color(0x99000000), CircleShape)
+                        .size(48.dp),
+                    onInteraction = resetControlsTimer
                 ) {
                     Icon(Icons.Default.Lock, contentDescription = "Unlock", tint = Color(0xFFE50914))
                 }
@@ -849,6 +1068,8 @@ fun ExoPlayerStreamPlayer(
                     playbackSpeed = playbackSpeed,
                     isLandscape = isLandscape,
                     isFillScreen = isFillScreen,
+                    centerPlayFocusRequester = centerPlayFocusRequester,
+                    onInteraction = resetControlsTimer,
                     onBack = {
                         exoPlayer.release()
                         onBack()
@@ -911,6 +1132,102 @@ fun ExoPlayerStreamPlayer(
 }
 
 @Composable
+private fun TvPlayerIconButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    focusRequester: FocusRequester? = null,
+    onInteraction: () -> Unit = {},
+    icon: @Composable () -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isFocused) 1.18f else 1f,
+        label = "tv_icon_scale"
+    )
+
+    LaunchedEffect(isFocused) {
+        if (isFocused) onInteraction()
+    }
+
+    Box(
+        modifier = modifier
+            .scale(scale)
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .border(
+                width = if (isFocused) 2.5.dp else 0.dp,
+                color = if (isFocused) Color.White else Color.Transparent,
+                shape = CircleShape
+            )
+            .background(
+                color = if (isFocused) Color(0xFFE50914) else Color(0x33FFFFFF),
+                shape = CircleShape
+            )
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = {
+                    onInteraction()
+                    onClick()
+                }
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        icon()
+    }
+}
+
+@Composable
+private fun TvPlayerChipButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    isSelected: Boolean = false,
+    onInteraction: () -> Unit = {},
+    content: @Composable RowScope.() -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isFocused) 1.10f else 1f,
+        label = "tv_chip_scale"
+    )
+
+    LaunchedEffect(isFocused) {
+        if (isFocused) onInteraction()
+    }
+
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = when {
+            isFocused -> Color(0xFFE50914)
+            isSelected -> Color(0xCCB81D24)
+            else -> Color(0x33FFFFFF)
+        },
+        border = BorderStroke(
+            width = if (isFocused) 2.dp else 1.dp,
+            color = if (isFocused) Color.White else Color(0x22FFFFFF)
+        ),
+        modifier = modifier
+            .scale(scale)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = {
+                    onInteraction()
+                    onClick()
+                }
+            )
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+        ) {
+            content()
+        }
+    }
+}
+
+@Composable
 private fun BoxScope.PlayerControlsOverlay(
     isPlaying: Boolean,
     currentPosition: Long,
@@ -918,6 +1235,8 @@ private fun BoxScope.PlayerControlsOverlay(
     playbackSpeed: Float,
     isLandscape: Boolean,
     isFillScreen: Boolean,
+    centerPlayFocusRequester: FocusRequester,
+    onInteraction: () -> Unit = {},
     onBack: () -> Unit,
     onPlayPause: () -> Unit,
     onSeekRelative: (Long) -> Unit,
@@ -943,42 +1262,65 @@ private fun BoxScope.PlayerControlsOverlay(
             .fillMaxWidth()
             .align(Alignment.TopStart)
             .statusBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = 24.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(onClick = onBack) {
+        TvPlayerIconButton(
+            onClick = onBack,
+            modifier = Modifier.size(44.dp),
+            onInteraction = onInteraction
+        ) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
         }
 
         Text(
             text = "Aura Play Cinema",
             color = Color.White,
-            fontSize = 16.sp,
+            fontSize = 17.sp,
             fontWeight = FontWeight.Bold
         )
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             if (!isTv) {
-                IconButton(onClick = onToggleOrientation) {
+                TvPlayerIconButton(
+                    onClick = onToggleOrientation,
+                    modifier = Modifier.size(44.dp),
+                    onInteraction = onInteraction
+                ) {
                     Icon(
                         imageVector = if (isLandscape) Icons.Default.ScreenLockPortrait else Icons.Default.ScreenRotation,
                         contentDescription = if (isLandscape) "Switch to Portrait" else "Switch to Landscape",
                         tint = Color.White
                     )
                 }
-                IconButton(onClick = onEnterPip) {
+                TvPlayerIconButton(
+                    onClick = onEnterPip,
+                    modifier = Modifier.size(44.dp),
+                    onInteraction = onInteraction
+                ) {
                     Icon(
                         imageVector = Icons.Default.PictureInPictureAlt,
                         contentDescription = "PIP Mode",
                         tint = Color.White
                     )
                 }
+                TvPlayerIconButton(
+                    onClick = onLockScreen,
+                    modifier = Modifier.size(44.dp),
+                    onInteraction = onInteraction
+                ) {
+                    Icon(Icons.Default.LockOpen, contentDescription = "Lock", tint = Color.White)
+                }
             }
-            IconButton(onClick = onLockScreen) {
-                Icon(Icons.Default.LockOpen, contentDescription = "Lock", tint = Color.White)
-            }
-            IconButton(onClick = onTracksClicked) {
+            TvPlayerIconButton(
+                onClick = onTracksClicked,
+                modifier = Modifier.size(44.dp),
+                onInteraction = onInteraction
+            ) {
                 Icon(Icons.Default.Subtitles, contentDescription = "Audio & Subtitles", tint = Color.White)
             }
         }
@@ -991,21 +1333,20 @@ private fun BoxScope.PlayerControlsOverlay(
         verticalAlignment = Alignment.CenterVertically
     ) {
         // -10s Rewind
-        IconButton(
+        TvPlayerIconButton(
             onClick = { onSeekRelative(-10_000) },
-            modifier = Modifier
-                .size(52.dp)
-                .background(Color(0x33FFFFFF), CircleShape)
+            modifier = Modifier.size(56.dp),
+            onInteraction = onInteraction
         ) {
-            Icon(Icons.Default.Replay, contentDescription = "-10s", tint = Color.White, modifier = Modifier.size(28.dp))
+            Icon(Icons.Default.Replay, contentDescription = "-10s", tint = Color.White, modifier = Modifier.size(30.dp))
         }
 
         // Center Play / Pause Button
-        IconButton(
+        TvPlayerIconButton(
             onClick = onPlayPause,
-            modifier = Modifier
-                .size(76.dp)
-                .background(Color(0x44FFFFFF), CircleShape)
+            modifier = Modifier.size(76.dp),
+            focusRequester = centerPlayFocusRequester,
+            onInteraction = onInteraction
         ) {
             Icon(
                 imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
@@ -1016,13 +1357,12 @@ private fun BoxScope.PlayerControlsOverlay(
         }
 
         // +10s Forward
-        IconButton(
+        TvPlayerIconButton(
             onClick = { onSeekRelative(10_000) },
-            modifier = Modifier
-                .size(52.dp)
-                .background(Color(0x33FFFFFF), CircleShape)
+            modifier = Modifier.size(56.dp),
+            onInteraction = onInteraction
         ) {
-            Icon(Icons.Default.Refresh, contentDescription = "+10s", tint = Color.White, modifier = Modifier.size(28.dp))
+            Icon(Icons.Default.Refresh, contentDescription = "+10s", tint = Color.White, modifier = Modifier.size(30.dp))
         }
     }
 
@@ -1032,7 +1372,7 @@ private fun BoxScope.PlayerControlsOverlay(
             .fillMaxWidth()
             .align(Alignment.BottomCenter)
             .navigationBarsPadding()
-            .padding(horizontal = 20.dp, vertical = 12.dp)
+            .padding(horizontal = 24.dp, vertical = 14.dp)
     ) {
         // Scrubber line
         val progress = if (totalDuration > 1000L) (currentPosition.toFloat() / totalDuration).coerceIn(0f, 1f) else 0f
@@ -1045,16 +1385,19 @@ private fun BoxScope.PlayerControlsOverlay(
             Text(
                 text = formatTime(currentPosition),
                 color = Color.White,
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.Medium
             )
             Slider(
                 value = progress,
-                onValueChange = onSeek,
+                onValueChange = {
+                    onInteraction()
+                    onSeek(it)
+                },
                 enabled = totalDuration > 1000L,
                 modifier = Modifier
                     .weight(1f)
-                    .padding(horizontal = 8.dp),
+                    .padding(horizontal = 12.dp),
                 colors = SliderDefaults.colors(
                     thumbColor = Color(0xFFE50914),
                     activeTrackColor = Color(0xFFE50914),
@@ -1066,12 +1409,12 @@ private fun BoxScope.PlayerControlsOverlay(
             Text(
                 text = if (totalDuration > 1000L) "-${formatTime(timeRemaining)}" else "--:--",
                 color = Color.White,
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.Medium
             )
         }
 
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
         // Extra action controls row
         Row(
@@ -1081,58 +1424,49 @@ private fun BoxScope.PlayerControlsOverlay(
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 // Speed controller button
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = Color(0x33FFFFFF),
-                    modifier = Modifier.clickable { onToggleSpeed() }
+                TvPlayerChipButton(
+                    onClick = onToggleSpeed,
+                    onInteraction = onInteraction
                 ) {
                     Text(
                         text = "Speed (${playbackSpeed}x)",
                         color = Color.White,
                         fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                        fontWeight = FontWeight.Bold
                     )
                 }
 
                 // Fill vs Fit aspect ratio toggle
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = if (isFillScreen) Color(0xFFE50914) else Color(0x33FFFFFF),
-                    modifier = Modifier.clickable { onToggleFillScreen() }
+                TvPlayerChipButton(
+                    onClick = onToggleFillScreen,
+                    isSelected = isFillScreen,
+                    onInteraction = onInteraction
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (isFillScreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(15.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = if (isFillScreen) "Fill" else "Fit",
-                            color = Color.White,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                    Icon(
+                        imageVector = if (isFillScreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = if (isFillScreen) "Fill" else "Fit",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
 
             // Audio & Subtitles button
-            Row(
-                modifier = Modifier
-                    .clickable { onTracksClicked() }
-                    .padding(8.dp),
-                verticalAlignment = Alignment.CenterVertically
+            TvPlayerChipButton(
+                onClick = onTracksClicked,
+                onInteraction = onInteraction
             ) {
-                Icon(Icons.Default.Subtitles, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                Icon(Icons.Default.Subtitles, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
                 Spacer(modifier = Modifier.width(6.dp))
                 Text("Audio & Subtitles", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
@@ -1178,13 +1512,27 @@ private fun TrackSelectionDialog(
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Text("Select Available Audio Track", color = Color.Gray, fontSize = 13.sp)
-                Spacer(modifier = Modifier.height(8.dp))
-                LazyColumn {
+                Spacer(modifier = Modifier.height(10.dp))
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     items(audioTracks) { (displayName, langCode) ->
+                        val trackInteraction = remember { MutableInteractionSource() }
+                        val isTrackFocused by trackInteraction.collectIsFocusedAsState()
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable {
+                                .background(
+                                    color = if (isTrackFocused) Color(0xFFE50914) else Color(0x22FFFFFF),
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                                .border(
+                                    width = if (isTrackFocused) 2.dp else 0.dp,
+                                    color = if (isTrackFocused) Color.White else Color.Transparent,
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                                .clickable(
+                                    interactionSource = trackInteraction,
+                                    indication = null
+                                ) {
                                     val params = exoPlayer.trackSelectionParameters.buildUpon()
                                     if (langCode != null) {
                                         params.setPreferredAudioLanguage(langCode)
@@ -1194,20 +1542,48 @@ private fun TrackSelectionDialog(
                                     exoPlayer.trackSelectionParameters = params.build()
                                     onDismiss()
                                 }
-                                .padding(vertical = 10.dp),
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Default.Audiotrack, contentDescription = null, tint = Color(0xFFE50914))
+                            Icon(
+                                Icons.Default.Audiotrack,
+                                contentDescription = null,
+                                tint = if (isTrackFocused) Color.White else Color(0xFFE50914)
+                            )
                             Spacer(modifier = Modifier.width(12.dp))
-                            Text(displayName, color = Color.White, fontSize = 15.sp)
+                            Text(
+                                text = displayName,
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                fontWeight = if (isTrackFocused) FontWeight.Bold else FontWeight.Normal
+                            )
                         }
                     }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Done", color = Color(0xFFE50914))
+            val doneInteraction = remember { MutableInteractionSource() }
+            val isDoneFocused by doneInteraction.collectIsFocusedAsState()
+            TextButton(
+                onClick = onDismiss,
+                interactionSource = doneInteraction,
+                modifier = Modifier
+                    .background(
+                        color = if (isDoneFocused) Color(0xFFE50914) else Color.Transparent,
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                    .border(
+                        width = if (isDoneFocused) 2.dp else 0.dp,
+                        color = if (isDoneFocused) Color.White else Color.Transparent,
+                        shape = RoundedCornerShape(8.dp)
+                    )
+            ) {
+                Text(
+                    text = "Done",
+                    color = if (isDoneFocused) Color.White else Color(0xFFE50914),
+                    fontWeight = FontWeight.Bold
+                )
             }
         },
         containerColor = Color(0xFF1E1E1E)
