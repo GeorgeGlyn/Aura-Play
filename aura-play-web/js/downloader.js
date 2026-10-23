@@ -322,7 +322,7 @@ const Downloader = {
             return;
         }
 
-        NativePlayer.playOffline(src, rec.title, rec.media, rec.season, rec.episode);
+        NativePlayer.playOffline(src, rec.title, rec.media, rec.season, rec.episode, key);
     }
 };
 
@@ -395,11 +395,25 @@ const NativePlayer = {
     indicatorTimer: null,
     video: null,
     isCoverFit: false,
+    currentKey: null,
+    currentMedia: null,
+    currentSeason: null,
+    currentEpisode: null,
+    currentTitle: null,
+    lastSavedPos: 0,
+    hasResumed: false,
 
-    playOffline(src, title, media = null, season = null, episode = null) {
+    playOffline(src, title, media = null, season = null, episode = null, key = null) {
         this.isOpen = true;
         this.isHudVisible = true;
         this.isCoverFit = false;
+        this.currentKey = key;
+        this.currentMedia = media;
+        this.currentSeason = season;
+        this.currentEpisode = episode;
+        this.currentTitle = title;
+        this.lastSavedPos = 0;
+        this.hasResumed = false;
 
         let container = document.getElementById("native-player-container");
         if (!container) {
@@ -486,8 +500,27 @@ const NativePlayer = {
         const scrubberFill = document.getElementById("native-scrubber-fill");
         const scrubberBuffered = document.getElementById("native-scrubber-buffered");
 
+        const tryResumePosition = async () => {
+            if (this.hasResumed || !this.currentKey || !this.video) return;
+            this.hasResumed = true;
+            try {
+                const rec = await IDB.get(this.currentKey);
+                if (rec && rec.lastPosition && rec.lastPosition > 3) {
+                    const dur = this.video.duration || rec.duration || 0;
+                    if (!dur || rec.lastPosition < (dur - 15)) {
+                        this.video.currentTime = rec.lastPosition;
+                        this.showActionBubble(`Resumed from ${this.formatTime(rec.lastPosition)}`);
+                    }
+                }
+            } catch (err) {
+                console.warn("[NativePlayer] Resume position check failed:", err);
+            }
+        };
+
+        this.video.addEventListener("loadedmetadata", tryResumePosition);
         this.video.addEventListener("canplay", () => {
             loadingEl.classList.add("hidden");
+            tryResumePosition();
         });
 
         this.video.addEventListener("waiting", () => {
@@ -501,6 +534,12 @@ const NativePlayer = {
 
         this.video.addEventListener("pause", () => {
             if (playIcon) playIcon.textContent = "▶";
+            this.savePlaybackProgress();
+        });
+
+        this.video.addEventListener("ended", () => {
+            if (playIcon) playIcon.textContent = "▶";
+            this.resetPlaybackProgress();
         });
 
         this.video.addEventListener("timeupdate", () => {
@@ -517,6 +556,11 @@ const NativePlayer = {
                 const bufEnd = this.video.buffered.end(this.video.buffered.length - 1);
                 const bufPct = Math.min(100, Math.max(0, (bufEnd / dur) * 100));
                 scrubberBuffered.style.width = bufPct + "%";
+            }
+
+            // Throttled persistence every 2 seconds
+            if (Math.abs(cur - this.lastSavedPos) >= 2) {
+                this.savePlaybackProgress();
             }
         });
 
@@ -545,6 +589,66 @@ const NativePlayer = {
         }
 
         if (window.TizenBridge) window.TizenBridge.preventScreenSaver(true);
+    },
+
+    async savePlaybackProgress() {
+        if (!this.isOpen || !this.video || !this.currentKey) return;
+        const cur = this.video.currentTime || 0;
+        const dur = this.video.duration || 0;
+        if (cur <= 0) return;
+        this.lastSavedPos = cur;
+
+        const isNearEnd = dur > 0 && cur >= (dur - 15);
+        const savedPos = isNearEnd ? 0 : Math.floor(cur);
+
+        try {
+            const rec = await IDB.get(this.currentKey);
+            if (rec) {
+                rec.lastPosition = savedPos;
+                if (dur > 0) rec.duration = Math.floor(dur);
+                await IDB.put(rec);
+            }
+
+            // Sync with HomeScreen Continue Watching row
+            if (window.App && typeof window.App.updateContinueWatching === "function" && rec) {
+                const mediaObj = rec.media || {
+                    id: rec.key,
+                    title: rec.title,
+                    poster_path: rec.poster,
+                    media_type: rec.season ? "tv" : "movie"
+                };
+                window.App.updateContinueWatching({
+                    id: mediaObj.id || rec.key,
+                    title: rec.title,
+                    poster_path: rec.poster || (mediaObj && mediaObj.poster_path),
+                    backdrop_path: mediaObj && (mediaObj.backdrop_path || mediaObj.poster_path),
+                    media_type: mediaObj.media_type || (rec.season ? "tv" : "movie"),
+                    season: rec.season,
+                    episode: rec.episode,
+                    position: savedPos,
+                    duration: dur > 0 ? Math.floor(dur) : (rec.duration || 5400),
+                    isOffline: true,
+                    downloadKey: rec.key
+                });
+            }
+        } catch (e) {
+            console.warn("[NativePlayer] Error saving offline progress:", e);
+        }
+    },
+
+    async resetPlaybackProgress() {
+        if (!this.currentKey) return;
+        try {
+            const rec = await IDB.get(this.currentKey);
+            if (rec) {
+                rec.lastPosition = 0;
+                await IDB.put(rec);
+            }
+            if (window.App && typeof window.App.removeContinueWatching === "function") {
+                const id = (rec && rec.media && rec.media.id) || this.currentKey;
+                window.App.removeContinueWatching(id, this.currentSeason, this.currentEpisode);
+            }
+        } catch (e) {}
     },
 
     formatTime(sec) {
@@ -646,6 +750,7 @@ const NativePlayer = {
     },
 
     close() {
+        this.savePlaybackProgress();
         this.isOpen = false;
         this.isHudVisible = false;
         clearTimeout(this.hudTimer);
@@ -658,6 +763,11 @@ const NativePlayer = {
         }
         document.body.style.overflow = "";
         if (window.TizenBridge) window.TizenBridge.preventScreenSaver(false);
+
+        // Re-render downloads library to refresh watched progress bars
+        if (window.DownloadUI) {
+            window.DownloadUI.renderLibrary();
+        }
 
         // Restore focus to downloads grid
         setTimeout(() => {
@@ -709,6 +819,8 @@ const DownloadUI = {
             const isReady      = item.status === "completed";
             const isActive     = ["extracting","downloading"].includes(item.status);
             const progressPct  = isActive ? (item.progress > 0 ? item.progress : 0) : (isReady ? 100 : 0);
+            const isResumable  = isReady && item.lastPosition && item.lastPosition > 3 && item.duration > 0;
+            const watchedPct   = isResumable ? Math.min(100, Math.round((item.lastPosition / item.duration) * 100)) : 0;
 
             return `
                 <div class="download-card" data-key="${item.key}">
@@ -732,11 +844,20 @@ const DownloadUI = {
                                 ${progressPct >= 0 ? progressPct + "%" : "Calculating..."}
                             </div>
                         ` : ""}
+                        ${isResumable ? `
+                            <div class="download-progress-track watched-track" style="margin-top:6px;" title="Watched ${watchedPct}%">
+                                <div class="download-progress-fill watched-fill" style="width:${watchedPct}%; background:linear-gradient(90deg, #e50914, #ff3b30);"></div>
+                            </div>
+                            <div class="download-resume-label" style="font-size:11px; color:#ff4a4a; font-weight:600; margin-top:3px; display:flex; justify-content:space-between;">
+                                <span>⏱ Resume at ${NativePlayer.formatTime(item.lastPosition)}</span>
+                                <span style="opacity:0.8;">${watchedPct}% watched</span>
+                            </div>
+                        ` : ""}
                         <div class="download-actions">
                             ${isReady ? `
                                 <button class="dl-btn dl-btn-play focusable" tabindex="0"
                                         onclick="Downloader.playOffline('${item.key}')">
-                                    ▶ Watch Offline
+                                    ${isResumable ? `▶ Resume (${NativePlayer.formatTime(item.lastPosition)})` : `▶ Watch Offline`}
                                 </button>
                             ` : ""}
                             ${isActive ? `

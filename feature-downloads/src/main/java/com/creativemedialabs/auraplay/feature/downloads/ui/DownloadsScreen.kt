@@ -36,6 +36,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.creativemedialabs.auraplay.core.database.entity.DownloadEntity
 import com.creativemedialabs.auraplay.core.database.entity.MonitoredSeriesEntity
+import com.creativemedialabs.auraplay.core.database.util.WatchProgressManager
 
 private const val TMDB_POSTER_BASE = "https://image.tmdb.org/t/p/w500"
 
@@ -959,6 +960,14 @@ private fun EpisodeDownloadRow(
         if (!still.isNullOrBlank()) still else download.posterPath
     }
 
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val watchedFraction = remember(download.localFilePath) {
+        WatchProgressManager.getWatchedFraction(context, download.localFilePath)
+    }
+    val savedPos = remember(download.localFilePath) {
+        WatchProgressManager.getSavedPosition(context, download.localFilePath)
+    }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -1030,10 +1039,20 @@ private fun EpisodeDownloadRow(
                     )
                 }
 
-                // Progress bar on thumbnail during active download
+                // Progress bar on thumbnail during active download or partially watched
                 if (isDownloading) {
                     LinearProgressIndicator(
                         progress = { download.progressPercentage / 100f },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(3.dp)
+                            .align(Alignment.BottomCenter),
+                        color = Color(0xFFE50914),
+                        trackColor = Color(0x66000000)
+                    )
+                } else if (isCompleted && watchedFraction != null) {
+                    LinearProgressIndicator(
+                        progress = { watchedFraction },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(3.dp)
@@ -1078,6 +1097,19 @@ private fun EpisodeDownloadRow(
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium
                         )
+                        if (watchedFraction != null) {
+                            Text(
+                                text = " • ",
+                                color = Color(0xFF555555),
+                                fontSize = 11.sp
+                            )
+                            Text(
+                                text = "Resume at ${WatchProgressManager.formatTime(savedPos)}",
+                                color = Color(0xFFFF4A4A),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 } else if (isDownloading) {
                     Text(
@@ -1243,6 +1275,12 @@ private fun DownloadItem(
     val isFailed = download.downloadStatus.startsWith("FAILED")
     val isActive = isDownloading || isQueuedOrPreparing
     val isCorruptOrMissing = isCompleted && (!fileExists || fileSizeBytes < 100 * 1024)
+    val watchedFraction = remember(download.localFilePath) {
+        WatchProgressManager.getWatchedFraction(context, download.localFilePath)
+    }
+    val savedPos = remember(download.localFilePath) {
+        WatchProgressManager.getSavedPosition(context, download.localFilePath)
+    }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -1296,6 +1334,15 @@ private fun DownloadItem(
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium
                         )
+                        if (watchedFraction != null) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "• Resume at ${WatchProgressManager.formatTime(savedPos)}",
+                                color = Color(0xFFFF4A4A),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     } else if (isCorruptOrMissing) {
                         Icon(
                             Icons.Default.Warning,
@@ -1401,6 +1448,17 @@ private fun DownloadItem(
                         color = Color(0xFFE50914),
                         trackColor = Color(0xFF333333)
                     )
+                } else if (isCompleted && !isCorruptOrMissing && watchedFraction != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    LinearProgressIndicator(
+                        progress = { watchedFraction },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(4.dp)
+                            .clip(RoundedCornerShape(2.dp)),
+                        color = Color(0xFFE50914),
+                        trackColor = Color(0xFF333333)
+                    )
                 }
             }
 
@@ -1411,8 +1469,8 @@ private fun DownloadItem(
                 IconButton(onClick = onPlay) {
                     Icon(
                         Icons.Default.PlayArrow,
-                        contentDescription = "Play",
-                        tint = Color.White,
+                        contentDescription = if (watchedFraction != null) "Resume" else "Play",
+                        tint = if (watchedFraction != null) Color(0xFFE50914) else Color.White,
                         modifier = Modifier.size(28.dp)
                     )
                 }

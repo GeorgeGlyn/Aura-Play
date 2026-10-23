@@ -107,6 +107,9 @@ const App = {
 
     loadHome() {
         try {
+            // Render Netflix-style continue watching row if items exist
+            this.renderContinueWatchingRow();
+
             // Load trending & hero immediately so Samsung TV displays content in milliseconds
             TMDB.getTrendingAll().then(trending => {
                 if (trending && trending.length > 0) {
@@ -502,6 +505,176 @@ const App = {
             const id = card.dataset.id;
             const item = this.watchlist.find(i => i.id == id);
             card.addEventListener("click", () => this.openDetails(item));
+        });
+    },
+
+    getContinueWatching() {
+        try {
+            const data = localStorage.getItem("aura_continue_watching");
+            return data ? JSON.parse(data) : [];
+        } catch (e) {
+            return [];
+        }
+    },
+
+    getContinueWatchingItem(mediaId, season = null, episode = null) {
+        const list = this.getContinueWatching();
+        return list.find(i => {
+            if (season) {
+                return (i.id == mediaId || i.downloadKey === `tv_${mediaId}_s${season}_e${episode}`) && i.season == season && i.episode == episode;
+            }
+            return (i.id == mediaId || i.downloadKey === `movie_${mediaId}`);
+        }) || null;
+    },
+
+    updateContinueWatching(item) {
+        if (!item || !item.id) return;
+        const list = this.getContinueWatching();
+        const key = item.season ? `${item.id}_s${item.season}_e${item.episode}` : `${item.id}`;
+        
+        // Remove existing entry if present
+        const filtered = list.filter(i => {
+            const iKey = i.season ? `${i.id}_s${i.season}_e${i.episode}` : `${i.id}`;
+            return iKey !== key;
+        });
+
+        // Don't add if watched less than 5s or near end
+        if (item.position > 5 && (!item.duration || item.position < (item.duration - 20))) {
+            filtered.unshift({
+                id: item.id,
+                title: item.title,
+                poster_path: item.poster_path,
+                backdrop_path: item.backdrop_path,
+                media_type: item.media_type || (item.season ? "tv" : "movie"),
+                season: item.season || null,
+                episode: item.episode || null,
+                position: Math.floor(item.position),
+                duration: Math.floor(item.duration || 5400),
+                isOffline: !!item.isOffline,
+                downloadKey: item.downloadKey || null,
+                updatedAt: Date.now()
+            });
+        }
+
+        // Limit to 20 items
+        const trimmed = filtered.slice(0, 20);
+        try {
+            localStorage.setItem("aura_continue_watching", JSON.stringify(trimmed));
+        } catch (e) {}
+
+        this.renderContinueWatchingRow();
+    },
+
+    removeContinueWatching(mediaId, season = null, episode = null) {
+        const list = this.getContinueWatching();
+        const key = season ? `${mediaId}_s${season}_e${episode}` : `${mediaId}`;
+        const filtered = list.filter(i => {
+            const iKey = i.season ? `${i.id}_s${i.season}_e${i.episode}` : `${i.id}`;
+            return iKey !== key;
+        });
+        try {
+            localStorage.setItem("aura_continue_watching", JSON.stringify(filtered));
+        } catch (e) {}
+        this.renderContinueWatchingRow();
+    },
+
+    renderContinueWatchingRow() {
+        const rowContainer = document.getElementById("row-continue-watching");
+        if (!rowContainer) return;
+
+        const list = this.getContinueWatching();
+        if (list.length === 0) {
+            rowContainer.classList.add("hidden");
+            rowContainer.innerHTML = "";
+            return;
+        }
+
+        rowContainer.classList.remove("hidden");
+        rowContainer.innerHTML = `
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                <h2 class="carousel-title" style="margin-bottom:0;display:flex;align-items:center;gap:8px;">
+                    <span>Continue Watching</span>
+                    <span style="font-size:11px;font-weight:700;background:rgba(229,9,20,0.18);color:#e50914;padding:2px 8px;border-radius:12px;border:1px solid rgba(229,9,20,0.4);">FOR YOU</span>
+                </h2>
+                <span class="clear-continue-btn focusable" tabindex="0" style="color:var(--text-muted);cursor:pointer;font-size:12px;font-weight:600;padding:4px 8px;">Clear All</span>
+            </div>
+            <div class="carousel-items continue-watching-items">
+                ${list.map(item => {
+                    const dur = item.duration || 5400;
+                    const pct = Math.min(100, Math.max(5, Math.round((item.position / dur) * 100)));
+                    const timeLeftMin = Math.max(1, Math.ceil((dur - item.position) / 60));
+                    const posterSrc = item.poster_path ? TMDB.getPosterUrl(item.poster_path) : "assets/icon.png";
+                    const subtitle = item.season ? `S${item.season} E${item.episode}` : (item.isOffline ? "Offline Download" : "Movie");
+
+                    return `
+                        <div class="media-card cw-card focusable" tabindex="0" 
+                             data-id="${item.id}" 
+                             data-type="${item.media_type}"
+                             data-season="${item.season || ''}"
+                             data-episode="${item.episode || ''}"
+                             data-key="${item.downloadKey || ''}"
+                             data-offline="${item.isOffline ? 'true' : 'false'}"
+                             data-pos="${item.position}">
+                            <img class="media-poster" src="${posterSrc}" alt="${item.title}" loading="lazy"/>
+                            <div class="cw-play-overlay">
+                                <div class="cw-play-circle">▶</div>
+                            </div>
+                            <button class="cw-remove-btn focusable" tabindex="0" title="Remove from Continue Watching">✕</button>
+                            <div class="cw-progress-container">
+                                <div class="cw-progress-fill" style="width: ${pct}%;"></div>
+                            </div>
+                            <div class="card-overlay cw-info">
+                                <span class="card-match" style="background:#e50914;color:#fff;">${timeLeftMin}m left</span>
+                                <span class="card-title">${item.title}</span>
+                                <span style="font-size:11px;color:#aaa;">${subtitle}</span>
+                            </div>
+                        </div>
+                    `;
+                }).join("")}
+            </div>
+        `;
+
+        // Clear All button
+        const clearBtn = rowContainer.querySelector(".clear-continue-btn");
+        if (clearBtn) {
+            clearBtn.addEventListener("click", () => {
+                localStorage.removeItem("aura_continue_watching");
+                this.renderContinueWatchingRow();
+            });
+        }
+
+        // Card click -> Resume directly!
+        rowContainer.querySelectorAll(".cw-card").forEach(card => {
+            const cardId = card.dataset.id;
+            const season = card.dataset.season ? parseInt(card.dataset.season, 10) : null;
+            const episode = card.dataset.episode ? parseInt(card.dataset.episode, 10) : null;
+            const isOffline = card.dataset.offline === "true";
+            const downloadKey = card.dataset.key;
+            const pos = parseInt(card.dataset.pos, 10) || 0;
+
+            const removeBtn = card.querySelector(".cw-remove-btn");
+            if (removeBtn) {
+                removeBtn.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    this.removeContinueWatching(cardId, season, episode);
+                });
+            }
+
+            card.addEventListener("click", (e) => {
+                if (e.target.closest(".cw-remove-btn")) return;
+                const item = list.find(i => {
+                    const iKey = i.season ? `${i.id}_s${i.season}_e${i.episode}` : `${i.id}`;
+                    const targetKey = season ? `${cardId}_s${season}_e${episode}` : `${cardId}`;
+                    return iKey === targetKey;
+                });
+                if (!item) return;
+
+                if (isOffline && downloadKey && window.Downloader) {
+                    window.Downloader.playOffline(downloadKey);
+                } else if (window.Player) {
+                    window.Player.play(item, season, episode, pos);
+                }
+            });
         });
     }
 };

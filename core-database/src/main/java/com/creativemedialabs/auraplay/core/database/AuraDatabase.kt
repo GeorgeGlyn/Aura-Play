@@ -30,5 +30,23 @@ abstract class AuraDatabase : RoomDatabase() {
     abstract fun downloadDao(): DownloadDao
     abstract fun monitoredSeriesDao(): MonitoredSeriesDao
     abstract fun episodeDao(): EpisodeDao
+
+    companion object {
+        @Volatile
+        private var INSTANCE: AuraDatabase? = null
+
+        fun getInstance(context: android.content.Context): AuraDatabase {
+            return INSTANCE ?: synchronized(this) {
+                INSTANCE ?: androidx.room.Room.databaseBuilder(
+                    context.applicationContext,
+                    AuraDatabase::class.java,
+                    "auraplay.db"
+                )
+                .fallbackToDestructiveMigration()
+                .build()
+                .also { INSTANCE = it }
+            }
+        }
+    }
 }
 

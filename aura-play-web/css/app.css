@@ -1414,3 +1414,118 @@ body {
     50% { opacity: 0.5; }
 }
 
+/* ==========================================================================
+   Netflix-Style Continue Watching Section
+   ========================================================================== */
+.continue-watching-section {
+    margin-bottom: 28px;
+    animation: fadeIn 0.4s ease;
+}
+
+.cw-card {
+    position: relative;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    cursor: pointer;
+}
+
+.cw-progress-container {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.25);
+    z-index: 4;
+}
+
+.cw-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #e50914, #ff3b30);
+    box-shadow: 0 0 8px rgba(229, 9, 20, 0.8);
+    transition: width 0.3s ease;
+}
+
+.cw-play-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.4);
+    opacity: 0;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    z-index: 3;
+}
+
+.cw-play-circle {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: rgba(229, 9, 20, 0.9);
+    border: 2px solid #fff;
+    color: #fff;
+    font-size: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.8);
+    transform: scale(0.9);
+    transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.cw-card:hover .cw-play-overlay,
+.cw-card.focused .cw-play-overlay {
+    opacity: 1;
+}
+
+.cw-card:hover .cw-play-circle,
+.cw-card.focused .cw-play-circle {
+    transform: scale(1.08);
+}
+
+.cw-remove-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s ease, background 0.2s ease;
+    z-index: 5;
+}
+
+.cw-card:hover .cw-remove-btn,
+.cw-card.focused .cw-remove-btn {
+    opacity: 1;
+}
+
+.cw-remove-btn:hover,
+.cw-remove-btn.focused {
+    background: #e50914;
+    border-color: #e50914;
+}
+
+.download-progress-track.watched-track {
+    background: rgba(255, 255, 255, 0.15);
+    height: 5px;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.download-resume-label {
+    font-size: 11px;
+    letter-spacing: 0.2px;
+}
+
+

@@ -81,6 +81,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
+import com.creativemedialabs.auraplay.core.database.util.WatchProgressManager
 import kotlinx.coroutines.delay
 
 private fun isWebStream(url: String): Boolean {
@@ -102,6 +103,10 @@ private fun isWebStream(url: String): Boolean {
 @Composable
 fun PlayerScreen(
     videoUrl: String,
+    mediaId: Int = 0,
+    mediaType: String = "movie",
+    title: String = "",
+    posterPath: String? = null,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -164,6 +169,10 @@ fun PlayerScreen(
     } else {
         ExoPlayerStreamPlayer(
             videoUrl = videoUrl,
+            mediaId = mediaId,
+            mediaType = mediaType,
+            title = title,
+            posterPath = posterPath,
             onBack = onBack,
             onError = {
                 forceWebStream = true
@@ -568,6 +577,10 @@ fun WebStreamPlayer(
 @Composable
 fun ExoPlayerStreamPlayer(
     videoUrl: String,
+    mediaId: Int = 0,
+    mediaType: String = "movie",
+    title: String = "",
+    posterPath: String? = null,
     onBack: () -> Unit,
     onError: () -> Unit = {}
 ) {
@@ -582,6 +595,11 @@ fun ExoPlayerStreamPlayer(
     val isLocalFile = remember(videoUrl) {
         videoUrl.startsWith("/") || videoUrl.startsWith("file://")
     }
+
+    val savedPosition = remember(videoUrl) {
+        WatchProgressManager.getSavedPosition(context, videoUrl)
+    }
+    var hasResumed by remember { mutableStateOf(false) }
 
     // Build ExoPlayer with fast start buffer durations and NetMirror HTTP headers
     val exoPlayer = remember {
@@ -819,6 +837,14 @@ fun ExoPlayerStreamPlayer(
                 if (exoPlayer.duration > 0) {
                     totalDuration = exoPlayer.duration
                 }
+                if (state == Player.STATE_READY && !hasResumed && savedPosition > 3000L) {
+                    hasResumed = true
+                    val dur = exoPlayer.duration
+                    if (dur <= 0L || savedPosition < (dur - 15000L)) {
+                        exoPlayer.seekTo(savedPosition)
+                        gestureIndicatorText = "Resumed from ${WatchProgressManager.formatTime(savedPosition)}"
+                    }
+                }
             }
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 Log.e("PlayerScreen", "ExoPlayer playback error: ${error.message}", error)
@@ -828,17 +854,39 @@ fun ExoPlayerStreamPlayer(
         }
         exoPlayer.addListener(listener)
         onDispose {
+            WatchProgressManager.saveProgress(
+                context = context,
+                urlOrPath = videoUrl,
+                positionMs = exoPlayer.currentPosition,
+                durationMs = exoPlayer.duration,
+                mediaId = mediaId,
+                mediaType = mediaType,
+                title = title,
+                posterPath = posterPath
+            )
             exoPlayer.removeListener(listener)
             exoPlayer.release()
         }
     }
 
-    // Update seek position every second
+    // Update seek position every second and persist progress
     LaunchedEffect(isPlaying) {
         while (isPlaying) {
             currentPosition = exoPlayer.currentPosition
             if (exoPlayer.duration > 0 && totalDuration != exoPlayer.duration) {
                 totalDuration = exoPlayer.duration
+            }
+            if (currentPosition > 2000L) {
+                WatchProgressManager.saveProgress(
+                    context = context,
+                    urlOrPath = videoUrl,
+                    positionMs = currentPosition,
+                    durationMs = totalDuration,
+                    mediaId = mediaId,
+                    mediaType = mediaType,
+                    title = title,
+                    posterPath = posterPath
+                )
             }
             delay(1000)
         }

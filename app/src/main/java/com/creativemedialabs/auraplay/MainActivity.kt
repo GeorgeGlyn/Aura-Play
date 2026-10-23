@@ -321,8 +321,37 @@ private fun AuraPlayApp(
                             mediaType = type,
                             onNavigateToPlayer = { url ->
                                 val encodedUrl = URLEncoder.encode(url, StandardCharsets.UTF_8.toString())
-                                navController.navigate("player?url=$encodedUrl")
+                                navController.navigate("player?url=$encodedUrl&mediaId=$mediaId&mediaType=${type ?: "movie"}")
                             },
+                            onBack = { navController.popBackStack() }
+                        )
+                    }
+                    composable(
+                        route = "player?url={url}&mediaId={mediaId}&mediaType={mediaType}&title={title}&poster={poster}",
+                        arguments = listOf(
+                            androidx.navigation.navArgument("url") { type = androidx.navigation.NavType.StringType },
+                            androidx.navigation.navArgument("mediaId") { type = androidx.navigation.NavType.IntType; defaultValue = 0 },
+                            androidx.navigation.navArgument("mediaType") { type = androidx.navigation.NavType.StringType; defaultValue = "movie" },
+                            androidx.navigation.navArgument("title") { type = androidx.navigation.NavType.StringType; defaultValue = "" },
+                            androidx.navigation.navArgument("poster") { type = androidx.navigation.NavType.StringType; defaultValue = "" }
+                        )
+                    ) { backStackEntry ->
+                        val url = backStackEntry.arguments?.getString("url") ?: ""
+                        val mediaId = backStackEntry.arguments?.getInt("mediaId") ?: 0
+                        val mediaType = backStackEntry.arguments?.getString("mediaType") ?: "movie"
+                        val title = backStackEntry.arguments?.getString("title") ?: ""
+                        val poster = backStackEntry.arguments?.getString("poster") ?: ""
+
+                        val decodedUrl = URLDecoder.decode(url, StandardCharsets.UTF_8.toString())
+                        val decodedTitle = if (title.isNotBlank()) URLDecoder.decode(title, StandardCharsets.UTF_8.toString()) else ""
+                        val decodedPoster = if (poster.isNotBlank()) URLDecoder.decode(poster, StandardCharsets.UTF_8.toString()) else null
+
+                        PlayerScreen(
+                            videoUrl = decodedUrl,
+                            mediaId = mediaId,
+                            mediaType = mediaType,
+                            title = decodedTitle,
+                            posterPath = decodedPoster,
                             onBack = { navController.popBackStack() }
                         )
                     }
@@ -515,8 +544,37 @@ private fun AuraPlayApp(
                             mediaType = type,
                             onNavigateToPlayer = { url ->
                                 val encodedUrl = URLEncoder.encode(url, StandardCharsets.UTF_8.toString())
-                                navController.navigate("player?url=$encodedUrl")
+                                navController.navigate("player?url=$encodedUrl&mediaId=$mediaId&mediaType=${type ?: "movie"}")
                             },
+                            onBack = { navController.popBackStack() }
+                        )
+                    }
+                    composable(
+                        route = "player?url={url}&mediaId={mediaId}&mediaType={mediaType}&title={title}&poster={poster}",
+                        arguments = listOf(
+                            androidx.navigation.navArgument("url") { type = androidx.navigation.NavType.StringType },
+                            androidx.navigation.navArgument("mediaId") { type = androidx.navigation.NavType.IntType; defaultValue = 0 },
+                            androidx.navigation.navArgument("mediaType") { type = androidx.navigation.NavType.StringType; defaultValue = "movie" },
+                            androidx.navigation.navArgument("title") { type = androidx.navigation.NavType.StringType; defaultValue = "" },
+                            androidx.navigation.navArgument("poster") { type = androidx.navigation.NavType.StringType; defaultValue = "" }
+                        )
+                    ) { backStackEntry ->
+                        val url = backStackEntry.arguments?.getString("url") ?: ""
+                        val mediaId = backStackEntry.arguments?.getInt("mediaId") ?: 0
+                        val mediaType = backStackEntry.arguments?.getString("mediaType") ?: "movie"
+                        val title = backStackEntry.arguments?.getString("title") ?: ""
+                        val poster = backStackEntry.arguments?.getString("poster") ?: ""
+
+                        val decodedUrl = URLDecoder.decode(url, StandardCharsets.UTF_8.toString())
+                        val decodedTitle = if (title.isNotBlank()) URLDecoder.decode(title, StandardCharsets.UTF_8.toString()) else ""
+                        val decodedPoster = if (poster.isNotBlank()) URLDecoder.decode(poster, StandardCharsets.UTF_8.toString()) else null
+
+                        PlayerScreen(
+                            videoUrl = decodedUrl,
+                            mediaId = mediaId,
+                            mediaType = mediaType,
+                            title = decodedTitle,
+                            posterPath = decodedPoster,
                             onBack = { navController.popBackStack() }
                         )
                     }
