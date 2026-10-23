@@ -76,15 +76,15 @@ const Player = {
         const e = episode || 1;
 
         switch (this.currentServer) {
+            case "multiembed":
+                url = isTv 
+                    ? `https://multiembed.mov/?video_id=${id}&tmdb=1&s=${s}&e=${e}`
+                    : `https://multiembed.mov/?video_id=${id}&tmdb=1`;
+                break;
             case "vidsrc_cc":
                 url = isTv 
                     ? `https://vidsrc.cc/v2/embed/tv/${id}/${s}/${e}`
                     : `https://vidsrc.cc/v2/embed/movie/${id}`;
-                break;
-            case "vidsrc_xyz":
-                url = isTv 
-                    ? `https://vidsrc.xyz/embed/tv?tmdb=${id}&season=${s}&episode=${e}`
-                    : `https://vidsrc.xyz/embed/movie?tmdb=${id}`;
                 break;
             case "autoembed":
                 url = isTv 
@@ -100,6 +100,8 @@ const Player = {
         }
 
         console.log(`[Player] Loading stream (${this.currentServer}): ${url}`);
+        // Enforce strict HTML5 sandbox that strips all popup capabilities (allow-popups excluded)
+        this.frame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-presentation");
         this.frame.src = url;
     },
 
@@ -114,6 +116,7 @@ const Player = {
         const serverMap = {
             "vidlink": document.getElementById("server-btn-vidlink"),
             "vidsrc_cc": document.getElementById("server-btn-vidsrc"),
+            "multiembed": document.getElementById("server-btn-multiembed"),
             "autoembed": document.getElementById("server-btn-autoembed")
         };
         for (const key in serverMap) {

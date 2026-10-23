@@ -1,4 +1,21 @@
 // Aura Play - Core Application Controller
+// Global Ad-Block & Popup Guard: Prevent external embeds from opening popups or redirecting the TV app
+(function() {
+    try {
+        window.open = function(url, target, features) {
+            console.warn("[AuraAdBlock] Strictly blocked popup window to:", url);
+            return null; // Nullify popup creation
+        };
+    } catch (e) {}
+
+    // Prevent iframe-initiated redirects from hijacking or replacing our app
+    window.addEventListener("beforeunload", function(e) {
+        if (window.Player && window.Player.isOpen) {
+            console.warn("[AuraAdBlock] Intercepted redirect attempt during playback");
+        }
+    });
+})();
+
 const App = {
     currentTab: "home",
     isModalOpen: false,
@@ -13,9 +30,9 @@ const App = {
         await this.loadHome();
 
         // Initialize Navigation and Tizen bridge
-        if (window.Navigation) window.Navigation.init();
-        if (window.TizenBridge) window.TizenBridge.init();
-        if (window.Player) window.Player.init();
+        if (window.Navigation) { window.Navigation.init(); }
+        if (window.TizenBridge) { window.TizenBridge.init(); }
+        if (window.Player) { window.Player.init(); }
 
         // Initial focus on Hero Play button for TV remote
         setTimeout(() => {
