@@ -61,6 +61,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -163,9 +164,34 @@ fun PlayerScreen(
     }
 
     var forceWebStream by remember(videoUrl) { mutableStateOf(false) }
+    var directStreamUrl by remember(videoUrl) { mutableStateOf<String?>(null) }
 
-    if (isWebStream(videoUrl) || forceWebStream) {
-        WebStreamPlayer(videoUrl = videoUrl, onBack = onBack)
+    if (directStreamUrl != null) {
+        ExoPlayerStreamPlayer(
+            videoUrl = directStreamUrl!!,
+            mediaId = mediaId,
+            mediaType = mediaType,
+            title = title,
+            posterPath = posterPath,
+            onBack = onBack,
+            onError = {
+                // If direct stream fails, revert back to web player
+                directStreamUrl = null
+                forceWebStream = true
+            }
+        )
+    } else if (isWebStream(videoUrl) || forceWebStream) {
+        WebStreamPlayer(
+            videoUrl = videoUrl,
+            mediaId = mediaId,
+            mediaType = mediaType,
+            title = title,
+            posterPath = posterPath,
+            onBack = onBack,
+            onDirectStreamCaptured = { sniffed ->
+                directStreamUrl = sniffed
+            }
+        )
     } else {
         ExoPlayerStreamPlayer(
             videoUrl = videoUrl,
@@ -184,7 +210,12 @@ fun PlayerScreen(
 @Composable
 fun WebStreamPlayer(
     videoUrl: String,
-    onBack: () -> Unit
+    mediaId: Int = 0,
+    mediaType: String = "movie",
+    title: String = "",
+    posterPath: String? = null,
+    onBack: () -> Unit,
+    onDirectStreamCaptured: ((String) -> Unit)? = null
 ) {
     var showOverlay by remember { mutableStateOf(true) }
     var isLoading by remember { mutableStateOf(true) }
@@ -194,6 +225,23 @@ fun WebStreamPlayer(
     var sniffedStreamUrl by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val activity = context as? Activity
+    val isTvDevice = remember {
+        context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK) ||
+        (context.getSystemService(Context.UI_MODE_SERVICE) as? android.app.UiModeManager)?.currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+    }
+
+    var isPlaying by remember { mutableStateOf(true) }
+    var currentPosition by remember { mutableLongStateOf(0L) }
+    var totalDuration by remember { mutableLongStateOf(1L) }
+    var playbackSpeed by remember { mutableFloatStateOf(1.0f) }
+    var isFillScreen by remember { mutableStateOf(false) }
+    var gestureIndicatorText by remember { mutableStateOf<String?>(null) }
+
+    var lastInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    val resetControlsTimer: () -> Unit = {
+        lastInteractionTime = System.currentTimeMillis()
+    }
+
     var isInPipMode by remember {
         mutableStateOf(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && activity?.isInPictureInPictureMode == true) true else false
@@ -240,21 +288,65 @@ fun WebStreamPlayer(
         }
     }
 
-    // Auto-hide top controls after 4 seconds
-    LaunchedEffect(showOverlay) {
+    // Auto-hide controls after 7s on TV, 4s on Mobile
+    LaunchedEffect(showOverlay, lastInteractionTime) {
         if (showOverlay) {
-            delay(4000)
+            delay(if (isTvDevice) 7000L else 4000L)
             showOverlay = false
         }
     }
 
-    // Intercept back button to dismiss fullscreen or exit player
+    // Clear gesture indicator after delay
+    LaunchedEffect(gestureIndicatorText) {
+        if (gestureIndicatorText != null) {
+            delay(1500)
+            gestureIndicatorText = null
+        }
+    }
+
+    // TV Focus Requesters
+    val webPlayerFocusRequester = remember { FocusRequester() }
+    val centerPlayFocusRequester = remember { FocusRequester() }
+
+    // When overlay appears on TV, request focus on center Play/Pause button for immediate remote control
+    LaunchedEffect(showOverlay) {
+        if (showOverlay && isTvDevice) {
+            delay(150)
+            try {
+                centerPlayFocusRequester.requestFocus()
+            } catch (e: Exception) {
+                // ignore
+            }
+        } else if (!showOverlay && isTvDevice) {
+            try {
+                webPlayerFocusRequester.requestFocus()
+            } catch (e: Exception) {
+                // ignore
+            }
+        }
+    }
+
+    // Intercept back button: hide overlay first on TV, then exit
     BackHandler {
-        if (customView != null) {
+        if (showOverlay) {
+            showOverlay = false
+        } else if (customView != null) {
             customViewCallback?.onCustomViewHidden()
             customView = null
             customViewCallback = null
         } else {
+            if (currentPosition > 2000L) {
+                WatchProgressManager.saveProgress(
+                    context = context,
+                    urlOrPath = videoUrl,
+                    positionMs = currentPosition,
+                    durationMs = totalDuration,
+                    mediaId = mediaId,
+                    mediaType = mediaType,
+                    title = title,
+                    posterPath = posterPath
+                )
+            }
             webViewRef?.destroy()
             onBack()
         }
@@ -262,36 +354,281 @@ fun WebStreamPlayer(
 
     DisposableEffect(Unit) {
         onDispose {
+            if (currentPosition > 2000L) {
+                WatchProgressManager.saveProgress(
+                    context = context,
+                    urlOrPath = videoUrl,
+                    positionMs = currentPosition,
+                    durationMs = totalDuration,
+                    mediaId = mediaId,
+                    mediaType = mediaType,
+                    title = title,
+                    posterPath = posterPath
+                )
+            }
             webViewRef?.destroy()
         }
     }
 
-    val webFocusRequester = remember { FocusRequester() }
-    LaunchedEffect(Unit) {
-        try {
-            webFocusRequester.requestFocus()
-        } catch (e: Exception) {
-            // ignore
+    // HTML5 Video Playback Controls via JavaScript
+    val onPlayPause: () -> Unit = {
+        resetControlsTimer()
+        webViewRef?.evaluateJavascript(
+            """
+            (function() {
+                var v = document.querySelector('video');
+                if (v) {
+                    if (v.paused) { v.play(); return false; } else { v.pause(); return true; }
+                }
+                return null;
+            })();
+            """.trimIndent()
+        ) { res ->
+            if (res == "false") isPlaying = true
+            else if (res == "true") isPlaying = false
+            else isPlaying = !isPlaying
         }
     }
+
+    val onSeekRelative: (Long) -> Unit = { deltaMs ->
+        resetControlsTimer()
+        val deltaSec = deltaMs / 1000.0
+        webViewRef?.evaluateJavascript(
+            """
+            (function() {
+                var v = document.querySelector('video');
+                if (v) {
+                    var newTime = Math.max(0, Math.min(v.duration || 999999, v.currentTime + ($deltaSec)));
+                    v.currentTime = newTime;
+                    return newTime;
+                }
+                return null;
+            })();
+            """.trimIndent()
+        ) { res ->
+            val sec = res?.toDoubleOrNull()
+            if (sec != null) {
+                currentPosition = (sec * 1000).toLong()
+            }
+        }
+        gestureIndicatorText = if (deltaMs < 0) "-10s Rewind" else "+10s Fast Forward"
+    }
+
+    val onSeek: (Float) -> Unit = { fraction ->
+        resetControlsTimer()
+        webViewRef?.evaluateJavascript(
+            """
+            (function() {
+                var v = document.querySelector('video');
+                if (v && v.duration) {
+                    v.currentTime = v.duration * $fraction;
+                    return v.currentTime;
+                }
+                return null;
+            })();
+            """.trimIndent()
+        ) { res ->
+            val sec = res?.toDoubleOrNull()
+            if (sec != null) {
+                currentPosition = (sec * 1000).toLong()
+            }
+        }
+    }
+
+    val onToggleSpeed: () -> Unit = {
+        resetControlsTimer()
+        val nextSpeed = when (playbackSpeed) {
+            1.0f -> 1.25f
+            1.25f -> 1.5f
+            1.5f -> 0.75f
+            else -> 1.0f
+        }
+        playbackSpeed = nextSpeed
+        webViewRef?.evaluateJavascript(
+            """
+            (function() {
+                var v = document.querySelector('video');
+                if (v) { v.playbackRate = $nextSpeed; }
+            })();
+            """.trimIndent(),
+            null
+        )
+        gestureIndicatorText = "Speed: ${nextSpeed}x"
+    }
+
+    // Auto-resume previous watch progress in web player
+    LaunchedEffect(webViewRef) {
+        val savedPos = WatchProgressManager.getSavedPosition(context, videoUrl)
+        val savedDur = WatchProgressManager.getSavedDuration(context, videoUrl)
+        if (savedPos > 5000L && (savedDur <= 0 || savedPos < savedDur - 15000L)) {
+            val seekSec = savedPos / 1000.0
+            delay(2800)
+            webViewRef?.evaluateJavascript(
+                """
+                (function() {
+                    var v = document.querySelector('video');
+                    if (v) { v.currentTime = $seekSec; }
+                })();
+                """.trimIndent(),
+                null
+            )
+            gestureIndicatorText = "Resumed at ${formatTime(savedPos)}"
+        }
+    }
+
+    // Periodic synchronization of video currentTime, duration, and paused state
+    LaunchedEffect(webViewRef) {
+        while (true) {
+            delay(1000)
+            if (webViewRef != null) {
+                webViewRef?.evaluateJavascript(
+                    """
+                    (function() {
+                        var v = document.querySelector('video');
+                        if (v) {
+                            return JSON.stringify({
+                                curr: Math.floor((v.currentTime || 0) * 1000),
+                                dur: Math.floor((v.duration || 0) * 1000),
+                                paused: v.paused
+                            });
+                        }
+                        return null;
+                    })();
+                    """.trimIndent()
+                ) { rawResult ->
+                    try {
+                        if (rawResult != null && rawResult != "null") {
+                            val clean = if (rawResult.startsWith("\"") && rawResult.endsWith("\"")) {
+                                org.json.JSONTokener(rawResult).nextValue().toString()
+                            } else rawResult
+                            val json = org.json.JSONObject(clean)
+                            val curr = json.optLong("curr", 0L)
+                            val dur = json.optLong("dur", 0L)
+                            val paused = json.optBoolean("paused", false)
+                            if (dur > 0L) totalDuration = dur
+                            currentPosition = curr
+                            isPlaying = !paused
+                            if (curr > 2000L) {
+                                WatchProgressManager.saveProgress(
+                                    context = context,
+                                    urlOrPath = videoUrl,
+                                    positionMs = curr,
+                                    durationMs = if (dur > 0L) dur else totalDuration,
+                                    mediaId = mediaId,
+                                    mediaType = mediaType,
+                                    title = title,
+                                    posterPath = posterPath
+                                )
+                            }
+                        }
+                    } catch (e: Exception) {
+                        // ignore
+                    }
+                }
+            }
+        }
+    }
+
+    val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .focusRequester(webFocusRequester)
-            .focusable()
+            .focusRequester(webPlayerFocusRequester)
+            .focusable(!showOverlay)
             .onPreviewKeyEvent { keyEvent ->
                 if (keyEvent.type == KeyEventType.KeyUp) {
+                    resetControlsTimer()
                     when (keyEvent.key) {
-                        Key.DirectionCenter, Key.Enter, Key.DirectionUp, Key.DirectionDown -> {
+                        Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
+                            if (!showOverlay) {
+                                showOverlay = true
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        Key.MediaPlayPause -> {
+                            onPlayPause()
                             showOverlay = true
                             true
+                        }
+                        Key.MediaPlay -> {
+                            if (!isPlaying) onPlayPause()
+                            showOverlay = true
+                            true
+                        }
+                        Key.MediaPause -> {
+                            if (isPlaying) onPlayPause()
+                            showOverlay = true
+                            true
+                        }
+                        Key.MediaFastForward -> {
+                            onSeekRelative(10_000)
+                            showOverlay = true
+                            true
+                        }
+                        Key.MediaRewind -> {
+                            onSeekRelative(-10_000)
+                            showOverlay = true
+                            true
+                        }
+                        Key.DirectionLeft -> {
+                            if (!showOverlay) {
+                                onSeekRelative(-10_000)
+                                showOverlay = true
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        Key.DirectionRight -> {
+                            if (!showOverlay) {
+                                onSeekRelative(10_000)
+                                showOverlay = true
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        Key.DirectionUp, Key.DirectionDown -> {
+                            if (!showOverlay) {
+                                showOverlay = true
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        Key.Back, Key.Escape -> {
+                            if (showOverlay) {
+                                showOverlay = false
+                                true
+                            } else {
+                                false
+                            }
                         }
                         else -> false
                     }
                 } else false
             }
+            .then(
+                if (!isInPipMode && !isTvDevice) {
+                    Modifier.pointerInput(Unit) {
+                        detectTapGestures(
+                            onTap = { showOverlay = !showOverlay },
+                            onDoubleTap = { offset ->
+                                if (offset.x < size.width / 2) {
+                                    onSeekRelative(-10_000)
+                                } else {
+                                    onSeekRelative(10_000)
+                                }
+                                showOverlay = true
+                            }
+                        )
+                    }
+                } else Modifier
+            )
     ) {
         if (customView != null) {
             AndroidView(
@@ -351,6 +688,10 @@ fun WebStreamPlayer(
                                     if (sniffedStreamUrl == null) {
                                         sniffedStreamUrl = reqUrl
                                         Log.d("WebStreamPlayer", "Sniffed direct stream: $reqUrl")
+                                        if (isTvDevice) {
+                                            // Auto-upgrade to native ExoPlayer on TV for highest quality & native D-pad remote support
+                                            onDirectStreamCaptured?.invoke(reqUrl)
+                                        }
                                     }
                                 }
                                 return super.shouldInterceptRequest(view, request)
@@ -396,7 +737,6 @@ fun WebStreamPlayer(
                                 isUserGesture: Boolean,
                                 resultMsg: android.os.Message?
                             ): Boolean {
-                                // Block all popups, ad windows, and new tabs
                                 return false
                             }
 
@@ -442,133 +782,77 @@ fun WebStreamPlayer(
             }
         }
 
-        // Top Bar Overlay
-        AnimatedVisibility(
-            visible = showOverlay && !isInPipMode,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier.align(Alignment.TopCenter)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        androidx.compose.ui.graphics.Brush.verticalGradient(
-                            listOf(Color(0xDD000000), Color.Transparent)
-                        )
-                    )
-                    .statusBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(
-                    onClick = {
-                        webViewRef?.destroy()
-                        onBack()
-                    },
-                    modifier = Modifier.background(Color(0x66000000), CircleShape)
+        if (!isInPipMode) {
+            // Gesture HUD Overlay
+            gestureIndicatorText?.let { text ->
+                Surface(
+                    modifier = Modifier.align(Alignment.Center),
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xCC000000)
                 ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = Color.White
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "AuraPlay Free Web Stream",
+                        text = text,
                         color = Color.White,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = if (sniffedStreamUrl != null) "Ad-Blocked • 1080p FHD • Direct Stream Ready" else "Ad-Blocked • 1080p FHD • Zero Config",
-                        color = Color(0xFF4CAF50),
-                        fontSize = 11.sp
-                    )
-                }
-
-                if (sniffedStreamUrl != null) {
-                    IconButton(
-                        onClick = {
-                            val clip = android.content.ClipData.newPlainText("Direct Stream URL", sniffedStreamUrl)
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
-                            clipboard?.setPrimaryClip(clip)
-                            android.widget.Toast.makeText(context, "Direct offline stream captured!", android.widget.Toast.LENGTH_SHORT).show()
-                        },
-                        modifier = Modifier.background(Color(0xFFE50914), CircleShape)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Download,
-                            contentDescription = "Direct Stream Captured",
-                            tint = Color.White
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                }
-
-                val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
-                val isTv = remember {
-                    context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK)
-                }
-                if (!isTv) {
-                    IconButton(
-                        onClick = {
-                            val act = context as? Activity
-                            if (isLandscape) {
-                                act?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                            } else {
-                                act?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                            }
-                        },
-                        modifier = Modifier.background(Color(0x66000000), CircleShape)
-                    ) {
-                        Icon(
-                            imageVector = if (isLandscape) Icons.Default.ScreenLockPortrait else Icons.Default.ScreenRotation,
-                            contentDescription = if (isLandscape) "Portrait" else "Landscape",
-                            tint = Color.White
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                }
-
-                IconButton(
-                    onClick = onEnterPip,
-                    modifier = Modifier.background(Color(0x66000000), CircleShape)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PictureInPictureAlt,
-                        contentDescription = "PIP Mode",
-                        tint = Color.White
-                    )
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-
-                IconButton(
-                    onClick = { webViewRef?.reload() },
-                    modifier = Modifier.background(Color(0x66000000), CircleShape)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = "Reload",
-                        tint = Color.White
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 14.dp)
                     )
                 }
             }
-        }
 
-        // Tap area at top to restore controls when hidden
-        if (!showOverlay && !isInPipMode) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(60.dp)
-                    .align(Alignment.TopCenter)
-                    .clickable { showOverlay = true }
-            )
+            // Full Netflix Overlay Controls (works on TV remote & mobile)
+            if (showOverlay) {
+                PlayerControlsOverlay(
+                    isPlaying = isPlaying,
+                    currentPosition = currentPosition,
+                    totalDuration = totalDuration,
+                    playbackSpeed = playbackSpeed,
+                    isLandscape = isLandscape,
+                    isFillScreen = isFillScreen,
+                    centerPlayFocusRequester = centerPlayFocusRequester,
+                    title = title.ifBlank { "Aura Play Free Web Stream" },
+                    subtitle = if (sniffedStreamUrl != null) "Direct Stream Ready" else "Ad-Blocked • 1080p FHD",
+                    onInteraction = resetControlsTimer,
+                    onBack = {
+                        if (currentPosition > 2000L) {
+                            WatchProgressManager.saveProgress(
+                                context = context,
+                                urlOrPath = videoUrl,
+                                positionMs = currentPosition,
+                                durationMs = totalDuration,
+                                mediaId = mediaId,
+                                mediaType = mediaType,
+                                title = title,
+                                posterPath = posterPath
+                            )
+                        }
+                        webViewRef?.destroy()
+                        onBack()
+                    },
+                    onPlayPause = onPlayPause,
+                    onSeekRelative = onSeekRelative,
+                    onLockScreen = null,
+                    onToggleSpeed = onToggleSpeed,
+                    onToggleOrientation = {
+                        if (isLandscape) {
+                            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                        } else {
+                            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                        }
+                    },
+                    onToggleFillScreen = {
+                        isFillScreen = !isFillScreen
+                        gestureIndicatorText = if (isFillScreen) "Screen Fill (Zoom)" else "Original Ratio (Fit)"
+                    },
+                    onTracksClicked = null,
+                    onEnterPip = onEnterPip,
+                    onSwitchToNative = if (sniffedStreamUrl != null) {
+                        { onDirectStreamCaptured?.invoke(sniffedStreamUrl!!) }
+                    } else null,
+                    isTv = isTvDevice,
+                    onSeek = onSeek
+                )
+            }
         }
     }
 }
@@ -951,7 +1235,7 @@ fun ExoPlayerStreamPlayer(
             .fillMaxSize()
             .background(Color.Black)
             .focusRequester(playerFocusRequester)
-            .focusable()
+            .focusable(!showControls)
             .onPreviewKeyEvent { keyEvent ->
                 if (keyEvent.type == KeyEventType.KeyUp) {
                     resetControlsTimer()
@@ -1182,6 +1466,8 @@ fun ExoPlayerStreamPlayer(
                     isLandscape = isLandscape,
                     isFillScreen = isFillScreen,
                     centerPlayFocusRequester = centerPlayFocusRequester,
+                    title = title.ifBlank { "Aura Play Cinema" },
+                    subtitle = if (isTvDevice) "Android TV 4K Ultra Player" else null,
                     onInteraction = resetControlsTimer,
                     onBack = {
                         exoPlayer.release()
@@ -1225,6 +1511,7 @@ fun ExoPlayerStreamPlayer(
                     },
                     onTracksClicked = { showTrackDialog = true },
                     onEnterPip = onEnterPip,
+                    onSwitchToNative = null,
                     isTv = isTvDevice,
                     onSeek = { fraction ->
                         val durToUse = if (exoPlayer.duration > 0) exoPlayer.duration else if (totalDuration > 1000L) totalDuration else 0L
@@ -1259,7 +1546,7 @@ private fun TvPlayerIconButton(
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (isFocused) 1.18f else 1f,
+        targetValue = if (isFocused) 1.22f else 1f,
         label = "tv_icon_scale"
     )
 
@@ -1271,8 +1558,9 @@ private fun TvPlayerIconButton(
         modifier = modifier
             .scale(scale)
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .focusable(interactionSource = interactionSource)
             .border(
-                width = if (isFocused) 2.5.dp else 0.dp,
+                width = if (isFocused) 3.dp else 0.dp,
                 color = if (isFocused) Color.White else Color.Transparent,
                 shape = CircleShape
             )
@@ -1299,13 +1587,14 @@ private fun TvPlayerChipButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     isSelected: Boolean = false,
+    focusRequester: FocusRequester? = null,
     onInteraction: () -> Unit = {},
     content: @Composable RowScope.() -> Unit
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (isFocused) 1.10f else 1f,
+        targetValue = if (isFocused) 1.15f else 1f,
         label = "tv_chip_scale"
     )
 
@@ -1321,11 +1610,13 @@ private fun TvPlayerChipButton(
             else -> Color(0x33FFFFFF)
         },
         border = BorderStroke(
-            width = if (isFocused) 2.dp else 1.dp,
+            width = if (isFocused) 2.5.dp else 1.dp,
             color = if (isFocused) Color.White else Color(0x22FFFFFF)
         ),
         modifier = modifier
             .scale(scale)
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .focusable(interactionSource = interactionSource)
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -1337,7 +1628,7 @@ private fun TvPlayerChipButton(
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
         ) {
             content()
         }
@@ -1353,16 +1644,19 @@ private fun BoxScope.PlayerControlsOverlay(
     isLandscape: Boolean,
     isFillScreen: Boolean,
     centerPlayFocusRequester: FocusRequester,
+    title: String = "",
+    subtitle: String? = null,
     onInteraction: () -> Unit = {},
     onBack: () -> Unit,
     onPlayPause: () -> Unit,
     onSeekRelative: (Long) -> Unit,
-    onLockScreen: () -> Unit,
+    onLockScreen: (() -> Unit)? = null,
     onToggleSpeed: () -> Unit,
-    onToggleOrientation: () -> Unit,
+    onToggleOrientation: (() -> Unit)? = null,
     onToggleFillScreen: () -> Unit,
-    onTracksClicked: () -> Unit,
-    onEnterPip: () -> Unit,
+    onTracksClicked: (() -> Unit)? = null,
+    onEnterPip: (() -> Unit)? = null,
+    onSwitchToNative: (() -> Unit)? = null,
     isTv: Boolean = false,
     onSeek: (Float) -> Unit
 ) {
@@ -1373,7 +1667,7 @@ private fun BoxScope.PlayerControlsOverlay(
             .background(Color(0x77000000))
     )
 
-    // Top Bar (Back button, Title, Orientation, Lock & Audio/Subtitle icons)
+    // Top Bar (Back button, Title & Subtitle, Orientation, Lock & Audio/Subtitle icons)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1391,54 +1685,90 @@ private fun BoxScope.PlayerControlsOverlay(
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
         }
 
-        Text(
-            text = "Aura Play Cinema",
-            color = Color.White,
-            fontSize = 17.sp,
-            fontWeight = FontWeight.Bold
-        )
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 16.dp)
+        ) {
+            Text(
+                text = title.ifBlank { "Aura Play Cinema" },
+                color = Color.White,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (!subtitle.isNullOrBlank()) {
+                Text(
+                    text = subtitle,
+                    color = Color(0xFF4CAF50),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1
+                )
+            }
+        }
 
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            if (!isTv) {
-                TvPlayerIconButton(
-                    onClick = onToggleOrientation,
-                    modifier = Modifier.size(44.dp),
+            if (onSwitchToNative != null) {
+                TvPlayerChipButton(
+                    onClick = onSwitchToNative,
                     onInteraction = onInteraction
                 ) {
-                    Icon(
-                        imageVector = if (isLandscape) Icons.Default.ScreenLockPortrait else Icons.Default.ScreenRotation,
-                        contentDescription = if (isLandscape) "Switch to Portrait" else "Switch to Landscape",
-                        tint = Color.White
-                    )
-                }
-                TvPlayerIconButton(
-                    onClick = onEnterPip,
-                    modifier = Modifier.size(44.dp),
-                    onInteraction = onInteraction
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PictureInPictureAlt,
-                        contentDescription = "PIP Mode",
-                        tint = Color.White
-                    )
-                }
-                TvPlayerIconButton(
-                    onClick = onLockScreen,
-                    modifier = Modifier.size(44.dp),
-                    onInteraction = onInteraction
-                ) {
-                    Icon(Icons.Default.LockOpen, contentDescription = "Lock", tint = Color.White)
+                    Icon(Icons.Default.Bolt, contentDescription = null, tint = Color.Yellow, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Ultra Player", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
-            TvPlayerIconButton(
-                onClick = onTracksClicked,
-                modifier = Modifier.size(44.dp),
-                onInteraction = onInteraction
-            ) {
-                Icon(Icons.Default.Subtitles, contentDescription = "Audio & Subtitles", tint = Color.White)
+            if (!isTv) {
+                if (onToggleOrientation != null) {
+                    TvPlayerIconButton(
+                        onClick = onToggleOrientation,
+                        modifier = Modifier.size(44.dp),
+                        onInteraction = onInteraction
+                    ) {
+                        Icon(
+                            imageVector = if (isLandscape) Icons.Default.ScreenLockPortrait else Icons.Default.ScreenRotation,
+                            contentDescription = if (isLandscape) "Switch to Portrait" else "Switch to Landscape",
+                            tint = Color.White
+                        )
+                    }
+                }
+                if (onEnterPip != null) {
+                    TvPlayerIconButton(
+                        onClick = onEnterPip,
+                        modifier = Modifier.size(44.dp),
+                        onInteraction = onInteraction
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PictureInPictureAlt,
+                            contentDescription = "PIP Mode",
+                            tint = Color.White
+                        )
+                    }
+                }
+                if (onLockScreen != null) {
+                    TvPlayerIconButton(
+                        onClick = onLockScreen,
+                        modifier = Modifier.size(44.dp),
+                        onInteraction = onInteraction
+                    ) {
+                        Icon(Icons.Default.LockOpen, contentDescription = "Lock", tint = Color.White)
+                    }
+                }
+            }
+            if (onTracksClicked != null) {
+                TvPlayerIconButton(
+                    onClick = onTracksClicked,
+                    modifier = Modifier.size(44.dp),
+                    onInteraction = onInteraction
+                ) {
+                    Icon(Icons.Default.Subtitles, contentDescription = "Audio & Subtitles", tint = Color.White)
+                }
             }
         }
     }
@@ -1578,14 +1908,16 @@ private fun BoxScope.PlayerControlsOverlay(
                 }
             }
 
-            // Audio & Subtitles button
-            TvPlayerChipButton(
-                onClick = onTracksClicked,
-                onInteraction = onInteraction
-            ) {
-                Icon(Icons.Default.Subtitles, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Audio & Subtitles", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            if (onTracksClicked != null) {
+                // Audio & Subtitles button
+                TvPlayerChipButton(
+                    onClick = onTracksClicked,
+                    onInteraction = onInteraction
+                ) {
+                    Icon(Icons.Default.Subtitles, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Audio & Subtitles", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
             }
         }
     }
