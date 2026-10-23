@@ -986,7 +986,7 @@ body {
     color: #fff;
 }
 
-/* ---- Native Video Player (offline) ---- */
+/* ---- Native Video Player (offline on Samsung Tizen & Web) ---- */
 #native-player-container {
     position: fixed;
     inset: 0;
@@ -1011,18 +1011,216 @@ body {
     background: #000;
 }
 
+/* Top HUD */
 .native-player-hud {
     position: absolute;
     top: 0;
     left: 0;
     right: 0;
-    padding: 20px 30px;
+    padding: 24px 36px;
     background: linear-gradient(180deg, rgba(0,0,0,0.85) 0%, transparent 100%);
     display: flex;
     align-items: center;
     justify-content: space-between;
-    z-index: 10;
-    transition: opacity 0.4s ease;
+    z-index: 20;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.player-top-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.player-action-btn {
+    padding: 8px 18px;
+    background: rgba(255, 255, 255, 0.15);
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.player-action-btn.focused,
+.player-action-btn:focus {
+    background: var(--primary, #E50914) !important;
+    border-color: #fff !important;
+    transform: scale(1.12);
+    box-shadow: 0 0 16px rgba(229, 9, 20, 0.6);
+    outline: none;
+}
+
+/* Center Remote Controls (Rewind -10s | Play/Pause | Forward +10s) */
+.native-center-controls {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    align-items: center;
+    gap: 36px;
+    z-index: 20;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.native-ctrl-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.18);
+    color: #fff;
+    border: 2px solid transparent;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.native-rewind-btn,
+.native-forward-btn {
+    width: 64px;
+    height: 64px;
+    font-size: 24px;
+    line-height: 1;
+}
+
+.native-rewind-btn .ctrl-sec,
+.native-forward-btn .ctrl-sec {
+    font-size: 11px;
+    font-weight: bold;
+    margin-top: -2px;
+}
+
+.native-play-btn {
+    width: 84px;
+    height: 84px;
+    font-size: 34px;
+    background: rgba(255, 255, 255, 0.24);
+}
+
+.native-ctrl-btn.focused,
+.native-ctrl-btn:focus {
+    background: var(--primary, #E50914) !important;
+    border-color: #ffffff !important;
+    transform: scale(1.18);
+    box-shadow: 0 0 24px rgba(229, 9, 20, 0.8);
+    outline: none;
+}
+
+/* Bottom HUD Scrubber & Time Bar */
+.native-player-bottom-hud {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 24px 36px 28px 36px;
+    background: linear-gradient(0deg, rgba(0,0,0,0.88) 0%, transparent 100%);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    z-index: 20;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.native-time-display {
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    min-width: 50px;
+    font-variant-numeric: tabular-nums;
+}
+
+.native-scrubber-track {
+    position: relative;
+    flex: 1;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.25);
+    border-radius: 4px;
+    cursor: pointer;
+    overflow: visible;
+}
+
+.native-scrubber-buffered {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.4);
+    border-radius: 4px;
+    pointer-events: none;
+}
+
+.native-scrubber-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    background: var(--primary, #E50914);
+    border-radius: 4px;
+    pointer-events: none;
+}
+
+.native-scrubber-thumb {
+    position: absolute;
+    right: -6px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 0 6px rgba(0,0,0,0.6);
+}
+
+.native-scrubber-track.focused,
+.native-scrubber-track:focus {
+    height: 8px;
+    outline: none;
+}
+
+.native-scrubber-track.focused .native-scrubber-thumb {
+    width: 18px;
+    height: 18px;
+    right: -9px;
+    background: var(--primary, #E50914);
+    border: 2px solid #fff;
+}
+
+/* Visibility classes */
+.hud-hidden {
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+.hud-visible {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+}
+
+/* Action Bubble HUD */
+.native-action-bubble {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    padding: 14px 28px;
+    background: rgba(0, 0, 0, 0.85);
+    color: #fff;
+    font-size: 18px;
+    font-weight: 700;
+    border-radius: 28px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+    z-index: 30;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+}
+
+.bubble-visible {
+    opacity: 1;
 }
 
 .native-loading-overlay {

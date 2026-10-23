@@ -93,3 +93,21 @@ body.tizen-tv .media-card {
     flex: 0 0 190px;
     height: 285px;
 }
+
+/* TV Player Controls Focus Rules */
+.native-ctrl-btn.focused {
+    transform: scale(1.2) !important;
+    border: 3px solid #ffffff !important;
+    background: #E50914 !important;
+    box-shadow: 0 0 30px rgba(229, 9, 20, 0.9) !important;
+    outline: none !important;
+}
+
+.player-action-btn.focused {
+    transform: scale(1.12) !important;
+    border: 2px solid #ffffff !important;
+    background: #E50914 !important;
+    box-shadow: 0 0 20px rgba(229, 9, 20, 0.8) !important;
+    outline: none !important;
+}
+

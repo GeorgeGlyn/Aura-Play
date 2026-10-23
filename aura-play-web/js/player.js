@@ -95,6 +95,14 @@ const Player = {
         this.loadStreamUrl();
     },
 
+    togglePlayPause() {
+        this.showHudTemporarily();
+    },
+
+    seek(seconds) {
+        this.showHudTemporarily();
+    },
+
     showHudTemporarily() {
         if (!this.isOpen) return;
         this.hud.classList.remove("fade-out");

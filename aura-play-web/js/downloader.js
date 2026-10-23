@@ -385,13 +385,21 @@ const QualityPicker = {
 };
 
 // --------------------------------------------------------------------------
-// Native HTML5 Video Player (for offline playback)
+// --------------------------------------------------------------------------
+// Native HTML5 Video Player (for offline playback on Samsung Tizen & Web)
 // --------------------------------------------------------------------------
 const NativePlayer = {
     isOpen: false,
+    isHudVisible: true,
+    hudTimer: null,
+    indicatorTimer: null,
+    video: null,
+    isCoverFit: false,
 
     playOffline(src, title, media = null, season = null, episode = null) {
         this.isOpen = true;
+        this.isHudVisible = true;
+        this.isCoverFit = false;
 
         let container = document.getElementById("native-player-container");
         if (!container) {
@@ -400,29 +408,69 @@ const NativePlayer = {
             document.body.appendChild(container);
         }
 
-        const subTitle = season ? `Season ${season} • Episode ${episode} • Offline` : "Downloaded • Offline";
+        const subTitle = season ? `Season ${season} • Episode ${episode} • Offline Download` : "Downloaded • 1080p HD • Offline";
         container.innerHTML = `
             <div class="native-player-overlay">
-                <div class="native-player-hud" id="native-hud">
-                    <button class="player-back-btn focusable" id="native-back-btn">← Back</button>
+                <!-- Top Header HUD -->
+                <div class="native-player-hud" id="native-hud-top">
+                    <button class="player-back-btn focusable" id="native-back-btn" tabindex="0" onclick="NativePlayer.close()">
+                        ← Back
+                    </button>
                     <div class="player-titles">
                         <div class="player-title">${title}</div>
                         <div class="player-subtitle">${subTitle}</div>
                     </div>
-                    <div style="width:120px"></div>
+                    <div class="player-top-actions">
+                        <button class="player-action-btn focusable" id="native-fill-btn" tabindex="0" onclick="NativePlayer.toggleFillScreen()">
+                            Fit (16:9)
+                        </button>
+                    </div>
                 </div>
+
+                <!-- Center Remote Controls (Netflix 10s Rewind | Play/Pause | 10s Forward) -->
+                <div class="native-center-controls" id="native-center-controls">
+                    <button class="native-ctrl-btn native-rewind-btn focusable" id="native-rewind-btn" tabindex="0" title="Rewind 10s" onclick="NativePlayer.seek(-10)">
+                        <span class="ctrl-icon">↺</span>
+                        <span class="ctrl-sec">10</span>
+                    </button>
+                    <button class="native-ctrl-btn native-play-btn focusable" id="native-play-btn" tabindex="0" title="Play/Pause" onclick="NativePlayer.togglePlayPause()">
+                        <span class="ctrl-icon" id="native-play-icon">⏸</span>
+                    </button>
+                    <button class="native-ctrl-btn native-forward-btn focusable" id="native-forward-btn" tabindex="0" title="Forward 10s" onclick="NativePlayer.seek(10)">
+                        <span class="ctrl-icon">↻</span>
+                        <span class="ctrl-sec">10</span>
+                    </button>
+                </div>
+
+                <!-- Bottom Scrubber & Time Bar -->
+                <div class="native-player-bottom-hud" id="native-hud-bottom">
+                    <div class="native-time-display" id="native-current-time">0:00</div>
+                    <div class="native-scrubber-track focusable" id="native-scrubber" tabindex="0">
+                        <div class="native-scrubber-buffered" id="native-scrubber-buffered" style="width: 0%"></div>
+                        <div class="native-scrubber-fill" id="native-scrubber-fill" style="width: 0%">
+                            <div class="native-scrubber-thumb"></div>
+                        </div>
+                    </div>
+                    <div class="native-time-display" id="native-total-time">--:--</div>
+                </div>
+
+                <!-- Gesture / Action Floating Bubble HUD -->
+                <div class="native-action-bubble hidden" id="native-action-bubble"></div>
+
+                <!-- HTML5 Video without buggy native browser controls -->
                 <video id="native-video" 
                        class="native-video"
                        src="${src}"
                        autoplay 
-                       controls 
-                       controlslist="nodownload"
-                       preload="metadata">
+                       playsinline
+                       preload="auto">
                     Your browser does not support HTML5 video.
                 </video>
+
+                <!-- Loading Spinner -->
                 <div class="native-loading-overlay" id="native-loading">
                     <div class="spinner"></div>
-                    <p>Loading offline video...</p>
+                    <p>Starting offline playback...</p>
                 </div>
             </div>
         `;
@@ -430,42 +478,178 @@ const NativePlayer = {
         container.classList.remove("hidden");
         document.body.style.overflow = "hidden";
 
-        const video    = document.getElementById("native-video");
+        this.video = document.getElementById("native-video");
         const loadingEl = document.getElementById("native-loading");
-        const hud      = document.getElementById("native-hud");
-        const backBtn  = document.getElementById("native-back-btn");
+        const playIcon = document.getElementById("native-play-icon");
+        const currentTimeEl = document.getElementById("native-current-time");
+        const totalTimeEl = document.getElementById("native-total-time");
+        const scrubberFill = document.getElementById("native-scrubber-fill");
+        const scrubberBuffered = document.getElementById("native-scrubber-buffered");
 
-        video.addEventListener("canplay", () => {
+        this.video.addEventListener("canplay", () => {
             loadingEl.classList.add("hidden");
         });
 
-        video.addEventListener("error", () => {
+        this.video.addEventListener("waiting", () => {
+            loadingEl.classList.remove("hidden");
+        });
+
+        this.video.addEventListener("playing", () => {
+            loadingEl.classList.add("hidden");
+            if (playIcon) playIcon.textContent = "⏸";
+        });
+
+        this.video.addEventListener("pause", () => {
+            if (playIcon) playIcon.textContent = "▶";
+        });
+
+        this.video.addEventListener("timeupdate", () => {
+            if (!this.video) return;
+            const cur = this.video.currentTime || 0;
+            const dur = this.video.duration || 0;
+            if (currentTimeEl) currentTimeEl.textContent = this.formatTime(cur);
+            if (totalTimeEl && dur > 0) totalTimeEl.textContent = this.formatTime(dur);
+            if (scrubberFill && dur > 0) {
+                const pct = Math.min(100, Math.max(0, (cur / dur) * 100));
+                scrubberFill.style.width = pct + "%";
+            }
+            if (scrubberBuffered && this.video.buffered && this.video.buffered.length > 0 && dur > 0) {
+                const bufEnd = this.video.buffered.end(this.video.buffered.length - 1);
+                const bufPct = Math.min(100, Math.max(0, (bufEnd / dur) * 100));
+                scrubberBuffered.style.width = bufPct + "%";
+            }
+        });
+
+        this.video.addEventListener("error", () => {
+            loadingEl.classList.remove("hidden");
             loadingEl.innerHTML = `
                 <p style="color:#ff4a4a;font-size:18px;">⚠ Could not play offline video.<br>
-                The video blob may have expired. Please re-download.</p>
+                The video file may have expired or is corrupted. Please re-download.</p>
             `;
         });
 
-        // Auto-hide HUD
-        let hudTimer;
-        const showHud = () => {
-            hud.style.opacity = "1";
-            clearTimeout(hudTimer);
-            hudTimer = setTimeout(() => { hud.style.opacity = "0"; }, 3000);
-        };
-        video.addEventListener("mousemove", showHud);
-        video.addEventListener("touchstart", showHud);
-        showHud();
+        // Click on video toggles HUD
+        this.video.addEventListener("click", () => {
+            this.toggleHud();
+        });
 
-        // Back button
-        backBtn.addEventListener("click", () => this.close());
+        // Click / Mouse movement resets HUD timer
+        container.addEventListener("mousemove", () => this.showHud());
+        container.addEventListener("touchstart", () => this.showHud());
 
-        if (window.Navigation) window.Navigation.setFocus(backBtn);
+        // Initial HUD display & focus on center Play/Pause button for immediate TV remote usability
+        this.showHud();
+        const centerPlayBtn = document.getElementById("native-play-btn");
+        if (centerPlayBtn && window.Navigation) {
+            setTimeout(() => window.Navigation.setFocus(centerPlayBtn), 100);
+        }
+
         if (window.TizenBridge) window.TizenBridge.preventScreenSaver(true);
+    },
+
+    formatTime(sec) {
+        if (!sec || isNaN(sec)) return "0:00";
+        const total = Math.floor(sec);
+        const h = Math.floor(total / 3600);
+        const m = Math.floor((total % 3600) / 60);
+        const s = total % 60;
+        const padS = s < 10 ? "0" + s : s;
+        if (h > 0) {
+            const padM = m < 10 ? "0" + m : m;
+            return `${h}:${padM}:${padS}`;
+        }
+        return `${m}:${padS}`;
+    },
+
+    showHud() {
+        if (!this.isOpen) return;
+        this.isHudVisible = true;
+        const top = document.getElementById("native-hud-top");
+        const center = document.getElementById("native-center-controls");
+        const bottom = document.getElementById("native-hud-bottom");
+        if (top) { top.classList.remove("hud-hidden"); top.classList.add("hud-visible"); }
+        if (center) { center.classList.remove("hud-hidden"); center.classList.add("hud-visible"); }
+        if (bottom) { bottom.classList.remove("hud-hidden"); bottom.classList.add("hud-visible"); }
+
+        clearTimeout(this.hudTimer);
+        this.hudTimer = setTimeout(() => {
+            this.hideHud();
+        }, 6000);
+    },
+
+    hideHud() {
+        if (!this.isOpen) return;
+        this.isHudVisible = false;
+        clearTimeout(this.hudTimer);
+        const top = document.getElementById("native-hud-top");
+        const center = document.getElementById("native-center-controls");
+        const bottom = document.getElementById("native-hud-bottom");
+        if (top) { top.classList.remove("hud-visible"); top.classList.add("hud-hidden"); }
+        if (center) { center.classList.remove("hud-visible"); center.classList.add("hud-hidden"); }
+        if (bottom) { bottom.classList.remove("hud-visible"); bottom.classList.add("hud-hidden"); }
+    },
+
+    toggleHud() {
+        if (this.isHudVisible) {
+            this.hideHud();
+        } else {
+            this.showHud();
+            const playBtn = document.getElementById("native-play-btn");
+            if (playBtn && window.Navigation) {
+                window.Navigation.setFocus(playBtn);
+            }
+        }
+    },
+
+    togglePlayPause() {
+        if (!this.video) return;
+        if (this.video.paused) {
+            this.video.play().catch(() => {});
+            this.showActionBubble("▶ Playing");
+        } else {
+            this.video.pause();
+            this.showActionBubble("⏸ Paused");
+        }
+        this.showHud();
+    },
+
+    seek(seconds) {
+        if (!this.video) return;
+        const target = Math.max(0, Math.min(this.video.duration || Infinity, this.video.currentTime + seconds));
+        this.video.currentTime = target;
+        this.showActionBubble(seconds > 0 ? `+${seconds}s Fast Forward` : `${seconds}s Rewind`);
+        this.showHud();
+    },
+
+    toggleFillScreen() {
+        if (!this.video) return;
+        this.isCoverFit = !this.isCoverFit;
+        this.video.style.objectFit = this.isCoverFit ? "cover" : "contain";
+        const btn = document.getElementById("native-fill-btn");
+        if (btn) btn.textContent = this.isCoverFit ? "Fill (Zoom)" : "Fit (16:9)";
+        this.showActionBubble(this.isCoverFit ? "Fill Screen (Zoom)" : "Original Aspect (Fit)");
+        this.showHud();
+    },
+
+    showActionBubble(text) {
+        const bubble = document.getElementById("native-action-bubble");
+        if (!bubble) return;
+        bubble.textContent = text;
+        bubble.classList.remove("hidden");
+        bubble.classList.add("bubble-visible");
+
+        clearTimeout(this.indicatorTimer);
+        this.indicatorTimer = setTimeout(() => {
+            bubble.classList.remove("bubble-visible");
+            bubble.classList.add("hidden");
+        }, 1300);
     },
 
     close() {
         this.isOpen = false;
+        this.isHudVisible = false;
+        clearTimeout(this.hudTimer);
+        clearTimeout(this.indicatorTimer);
         const container = document.getElementById("native-player-container");
         if (container) {
             const video = container.querySelector("video");
@@ -474,6 +658,16 @@ const NativePlayer = {
         }
         document.body.style.overflow = "";
         if (window.TizenBridge) window.TizenBridge.preventScreenSaver(false);
+
+        // Restore focus to downloads grid
+        setTimeout(() => {
+            const firstPlay = document.querySelector(".dl-btn-play");
+            if (firstPlay && window.Navigation) {
+                window.Navigation.setFocus(firstPlay);
+            } else if (window.Navigation) {
+                window.Navigation.moveFocus(40);
+            }
+        }, 100);
     }
 };
 

@@ -54,6 +54,38 @@ const Navigation = {
     handleKeyDown(e) {
         const keyCode = e.keyCode;
 
+        // Special D-pad handling when NativePlayer is playing offline video
+        if (window.NativePlayer && window.NativePlayer.isOpen) {
+            if (!window.NativePlayer.isHudVisible) {
+                // If controls are hidden, remote keys perform immediate video actions
+                if (keyCode === 13) { // Center / OK -> Toggle Play/Pause & reveal HUD
+                    e.preventDefault();
+                    window.NativePlayer.togglePlayPause();
+                    return;
+                }
+                if (keyCode === 37) { // Left -> Seek -10s
+                    e.preventDefault();
+                    window.NativePlayer.seek(-10);
+                    return;
+                }
+                if (keyCode === 39) { // Right -> Seek +10s
+                    e.preventDefault();
+                    window.NativePlayer.seek(10);
+                    return;
+                }
+                if (keyCode === 38 || keyCode === 40) { // Up / Down -> Wake controls
+                    e.preventDefault();
+                    window.NativePlayer.showHud();
+                    const playBtn = document.getElementById("native-play-btn");
+                    if (playBtn) this.setFocus(playBtn);
+                    return;
+                }
+            } else {
+                // When HUD is visible, any key resets the HUD auto-hide timer
+                window.NativePlayer.showHud();
+            }
+        }
+
         // D-pad Direction Keys
         // 37 = Left, 38 = Up, 39 = Right, 40 = Down, 13 = Enter
         if ([37, 38, 39, 40, 13].includes(keyCode)) {
@@ -82,6 +114,10 @@ const Navigation = {
     },
 
     getActiveScope() {
+        // If Native offline player is open, scope to native player controls
+        if (window.NativePlayer && window.NativePlayer.isOpen) {
+            return document.getElementById("native-player-container");
+        }
         // If Player is open, scope to player controls
         if (window.Player && window.Player.isOpen) {
             return document.getElementById("player-container");

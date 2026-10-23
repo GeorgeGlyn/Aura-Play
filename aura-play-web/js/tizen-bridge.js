@@ -51,24 +51,38 @@ const TizenBridge = {
 
         // Media keys for player
         if (keyCode === 415 || keyCode === 19 || keyCode === 10252) { // Play / Pause / PlayPause
-            if (window.Player && window.Player.isOpen) {
-                e.preventDefault();
+            e.preventDefault();
+            if (window.NativePlayer && window.NativePlayer.isOpen) {
+                window.NativePlayer.togglePlayPause();
+            } else if (window.Player && window.Player.isOpen) {
                 window.Player.togglePlayPause();
             }
         } else if (keyCode === 417) { // Fast Forward
-            if (window.Player && window.Player.isOpen) {
+            e.preventDefault();
+            if (window.NativePlayer && window.NativePlayer.isOpen) {
+                window.NativePlayer.seek(10);
+            } else if (window.Player && window.Player.isOpen) {
                 window.Player.seek(10);
             }
         } else if (keyCode === 412) { // Rewind
-            if (window.Player && window.Player.isOpen) {
+            e.preventDefault();
+            if (window.NativePlayer && window.NativePlayer.isOpen) {
+                window.NativePlayer.seek(-10);
+            } else if (window.Player && window.Player.isOpen) {
                 window.Player.seek(-10);
             }
         }
     },
 
     handleBackNavigation() {
-        // 0. If native offline video player is open, close it first
+        // 0. If native offline video player is open:
         if (window.NativePlayer && window.NativePlayer.isOpen) {
+            // If controls HUD is showing, first press simply hides controls
+            if (window.NativePlayer.isHudVisible) {
+                window.NativePlayer.hideHud();
+                return;
+            }
+            // If controls already hidden, exit playback
             window.NativePlayer.close();
             return;
         }
