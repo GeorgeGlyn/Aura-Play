@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="referrer" content="origin">
     <title>Aura Play - 4K Cinema &amp; TV Streaming</title>
     <link rel="icon" type="image/png" href="icon.png">
     
@@ -147,6 +148,7 @@
         <iframe id="player-frame" 
                 class="player-frame focusable" 
                 tabindex="0"
+                referrerpolicy="origin"
                 allow="autoplay; fullscreen; encrypted-media; picture-in-picture" 
                 allowfullscreen>
         </iframe>
@@ -163,7 +165,7 @@
             <div class="player-servers" id="player-servers">
                 <button class="server-btn focusable active" tabindex="0" id="server-btn-vidlink" onclick="Player.switchServer('vidlink')">Server 1</button>
                 <button class="server-btn focusable" tabindex="0" id="server-btn-vidsrc" onclick="Player.switchServer('vidsrc_cc')">Server 2</button>
-                <button class="server-btn focusable" tabindex="0" id="server-btn-multiembed" onclick="Player.switchServer('multiembed')">Server 3</button>
+                <button class="server-btn focusable" tabindex="0" id="server-btn-vidsrcxyz" onclick="Player.switchServer('vidsrc_xyz')">Server 3</button>
                 <button class="server-btn focusable" tabindex="0" id="server-btn-autoembed" onclick="Player.switchServer('autoembed')">Server 4</button>
             </div>
         </div>

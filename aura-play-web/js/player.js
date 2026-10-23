@@ -76,10 +76,10 @@ const Player = {
         const e = episode || 1;
 
         switch (this.currentServer) {
-            case "multiembed":
+            case "vidsrc_xyz":
                 url = isTv 
-                    ? `https://multiembed.mov/?video_id=${id}&tmdb=1&s=${s}&e=${e}`
-                    : `https://multiembed.mov/?video_id=${id}&tmdb=1`;
+                    ? `https://vidsrc.xyz/embed/tv?tmdb=${id}&season=${s}&episode=${e}`
+                    : `https://vidsrc.xyz/embed/movie?tmdb=${id}`;
                 break;
             case "vidsrc_cc":
                 url = isTv 
@@ -115,7 +115,7 @@ const Player = {
         const serverMap = {
             "vidlink": document.getElementById("server-btn-vidlink"),
             "vidsrc_cc": document.getElementById("server-btn-vidsrc"),
-            "multiembed": document.getElementById("server-btn-multiembed"),
+            "vidsrc_xyz": document.getElementById("server-btn-vidsrcxyz"),
             "autoembed": document.getElementById("server-btn-autoembed")
         };
         for (const key in serverMap) {
