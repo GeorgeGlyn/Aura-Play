@@ -1,0 +1,2 @@
+disabledValidators=org.eclipse.wst.jsdt.core.internal.validation.JavaScriptValidator,org.eclipse.wst.css.ui.internal.validation.CSSValidator,org.eclipse.wst.html.ui.internal.validation.HTMLValidator
+eclipse.preferences.version=1

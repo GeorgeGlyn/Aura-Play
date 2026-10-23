@@ -14,8 +14,12 @@ console.log('🚀 Packaging Aura Play for Samsung Tizen OS...');
 
 try {
     // 1. Remove previous build artifacts
-    if (fs.existsSync(outputWgt)) fs.unlinkSync(outputWgt);
-    if (fs.existsSync(tempZip)) fs.unlinkSync(tempZip);
+    if (fs.existsSync(outputWgt)) {
+        fs.unlinkSync(outputWgt);
+    }
+    if (fs.existsSync(tempZip)) {
+        fs.unlinkSync(tempZip);
+    }
 
     // 2. Files and folders to include
     const includes = ['config.xml', 'index.html', 'icon.png', 'css', 'js', 'assets'];

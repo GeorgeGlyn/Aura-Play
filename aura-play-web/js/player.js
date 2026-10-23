@@ -11,16 +11,21 @@ const Player = {
         this.titleEl = document.getElementById("player-title");
         this.subtitleEl = document.getElementById("player-subtitle");
         this.hud = document.getElementById("player-hud");
+        this.streamHud = document.getElementById("player-stream-hud");
 
         // Activity monitor to auto-hide HUD
-        window.addEventListener("mousemove", () => this.showHudTemporarily());
+        window.addEventListener("mousemove", () => {
+            this.showHudTemporarily();
+        });
         window.addEventListener("keydown", () => {
-            if (this.isOpen) this.showHudTemporarily();
+            if (this.isOpen) {
+                this.showHudTemporarily();
+            }
         });
     },
 
     play(media, season = null, episode = null) {
-        this.currentMedia = { ...media, season, episode };
+        this.currentMedia = Object.assign({}, media, { season: season, episode: episode });
         this.isOpen = true;
 
         if (window.TizenBridge) {
@@ -41,15 +46,23 @@ const Player = {
             this.subtitleEl.textContent = "Cinema HD Stream";
         }
 
+        this.updateServerButtons();
         this.loadStreamUrl();
         this.container.classList.remove("hidden");
         this.container.classList.add("active");
 
-        // Focus the Back button inside player HUD for TV remote
-        const backBtn = document.getElementById("player-back-btn");
-        if (backBtn && window.Navigation) {
-            window.Navigation.setFocus(backBtn);
-        }
+        // Auto-focus the Play button on the TV remote control bar so user can just press OK!
+        setTimeout(() => {
+            const playBtn = document.getElementById("stream-play-btn");
+            if (playBtn && window.Navigation) {
+                window.Navigation.setFocus(playBtn);
+            } else {
+                const backBtn = document.getElementById("player-back-btn");
+                if (backBtn && window.Navigation) {
+                    window.Navigation.setFocus(backBtn);
+                }
+            }
+        }, 150);
 
         this.showHudTemporarily();
     },
@@ -92,29 +105,112 @@ const Player = {
 
     switchServer(serverKey) {
         this.currentServer = serverKey;
+        this.updateServerButtons();
         this.loadStreamUrl();
+        this.showHudTemporarily();
+    },
+
+    updateServerButtons() {
+        const serverMap = {
+            "vidlink": document.getElementById("server-btn-vidlink"),
+            "vidsrc_cc": document.getElementById("server-btn-vidsrc"),
+            "autoembed": document.getElementById("server-btn-autoembed")
+        };
+        for (const key in serverMap) {
+            const btn = serverMap[key];
+            if (btn) {
+                if (key === this.currentServer) {
+                    btn.classList.add("active");
+                } else {
+                    btn.classList.remove("active");
+                }
+            }
+        }
+    },
+
+    interactStream() {
+        this.showHudTemporarily();
+        const frame = document.getElementById("player-frame");
+        if (frame) {
+            frame.focus();
+            if (frame.contentWindow) {
+                try {
+                    frame.contentWindow.focus();
+                    // Dispatch standard HTML5 video message triggers across origins
+                    frame.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
+                    frame.contentWindow.postMessage({ type: 'play' }, '*');
+                } catch (e) {
+                    // Ignore cross-origin access limitations
+                }
+            }
+        }
+        const playIcon = document.getElementById("stream-play-icon");
+        if (playIcon) {
+            playIcon.textContent = playIcon.textContent === "▶" ? "⏸" : "▶";
+        }
     },
 
     togglePlayPause() {
-        this.showHudTemporarily();
+        this.interactStream();
+    },
+
+    focusVideoFrame() {
+        const frame = document.getElementById("player-frame");
+        if (frame) {
+            frame.focus();
+            if (frame.contentWindow) {
+                try {
+                    frame.contentWindow.focus();
+                } catch (e) {}
+            }
+        }
     },
 
     seek(seconds) {
         this.showHudTemporarily();
+        const frame = document.getElementById("player-frame");
+        if (frame && frame.contentWindow) {
+            try {
+                frame.contentWindow.postMessage({ type: 'seek', offset: seconds }, '*');
+            } catch (e) {}
+        }
+    },
+
+    reloadStream() {
+        this.loadStreamUrl();
+        this.showHudTemporarily();
+        const playBtn = document.getElementById("stream-play-btn");
+        if (playBtn && window.Navigation) {
+            window.Navigation.setFocus(playBtn);
+        }
     },
 
     showHudTemporarily() {
-        if (!this.isOpen) return;
-        this.hud.classList.remove("fade-out");
-        this.hud.classList.add("fade-in");
+        if (!this.isOpen) {
+            return;
+        }
+        if (this.hud) {
+            this.hud.classList.remove("fade-out");
+            this.hud.classList.add("fade-in");
+        }
+        if (this.streamHud) {
+            this.streamHud.classList.remove("fade-out");
+            this.streamHud.classList.add("fade-in");
+        }
 
         clearTimeout(this.hideTimeout);
         this.hideTimeout = setTimeout(() => {
             if (this.isOpen) {
-                this.hud.classList.remove("fade-in");
-                this.hud.classList.add("fade-out");
+                if (this.hud) {
+                    this.hud.classList.remove("fade-in");
+                    this.hud.classList.add("fade-out");
+                }
+                if (this.streamHud) {
+                    this.streamHud.classList.remove("fade-in");
+                    this.streamHud.classList.add("fade-out");
+                }
             }
-        }, 3500);
+        }, 4000);
     },
 
     close() {

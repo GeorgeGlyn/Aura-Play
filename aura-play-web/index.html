@@ -145,10 +145,13 @@
     <!-- Fullscreen Cinema Player -->
     <div class="player-container hidden" id="player-container">
         <iframe id="player-frame" 
-                class="player-frame" 
+                class="player-frame focusable" 
+                tabindex="0"
                 allow="autoplay; fullscreen; encrypted-media; picture-in-picture" 
                 allowfullscreen>
         </iframe>
+        
+        <!-- Top HUD -->
         <div class="player-hud" id="player-hud">
             <button class="player-back-btn focusable" tabindex="0" id="player-back-btn" onclick="Player.close()">
                 ← Back
@@ -157,10 +160,34 @@
                 <div class="player-title" id="player-title">Title</div>
                 <div class="player-subtitle" id="player-subtitle">Season 1 • Episode 1</div>
             </div>
-            <div class="player-servers">
-                <button class="server-btn focusable" tabindex="0" onclick="Player.switchServer('vidlink')">Server 1</button>
-                <button class="server-btn focusable" tabindex="0" onclick="Player.switchServer('vidsrc_cc')">Server 2</button>
-                <button class="server-btn focusable" tabindex="0" onclick="Player.switchServer('autoembed')">Server 3</button>
+            <div class="player-servers" id="player-servers">
+                <button class="server-btn focusable active" tabindex="0" id="server-btn-vidlink" onclick="Player.switchServer('vidlink')">Server 1</button>
+                <button class="server-btn focusable" tabindex="0" id="server-btn-vidsrc" onclick="Player.switchServer('vidsrc_cc')">Server 2</button>
+                <button class="server-btn focusable" tabindex="0" id="server-btn-autoembed" onclick="Player.switchServer('autoembed')">Server 3</button>
+            </div>
+        </div>
+
+        <!-- TV Remote Stream Action Bar (Navigable with D-pad Down from Servers) -->
+        <div class="player-stream-hud" id="player-stream-hud">
+            <div class="stream-control-card">
+                <button class="stream-btn focusable" id="stream-rewind-btn" tabindex="0" onclick="Player.seek(-10)" title="Rewind 10s">
+                    <span class="stream-icon">↺</span> 10s
+                </button>
+                <button class="stream-btn stream-play-btn focusable" id="stream-play-btn" tabindex="0" onclick="Player.interactStream()" title="Play / Resume Stream">
+                    <span class="stream-icon" id="stream-play-icon">▶</span> Play Video
+                </button>
+                <button class="stream-btn focusable" id="stream-forward-btn" tabindex="0" onclick="Player.seek(10)" title="Forward 10s">
+                    10s <span class="stream-icon">↻</span>
+                </button>
+                <button class="stream-btn focusable" id="stream-focus-btn" tabindex="0" onclick="Player.focusVideoFrame()" title="Direct TV Remote into Player">
+                    <span class="stream-icon">⛶</span> Focus Player
+                </button>
+                <button class="stream-btn focusable" id="stream-reload-btn" tabindex="0" onclick="Player.reloadStream()" title="Reload Stream">
+                    <span class="stream-icon">🔄</span> Reload
+                </button>
+            </div>
+            <div class="stream-hint">
+                <span class="stream-hint-badge">TV Remote</span> Press <b>Down</b> from Server to reach <b>Play Video</b> • Press <b>Enter / OK</b> to start playback • Press <b>Up</b> to return to Servers
             </div>
         </div>
     </div>

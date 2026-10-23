@@ -4,7 +4,9 @@ const Navigation = {
     isTvMode: true,
 
     init() {
-        window.addEventListener("keydown", (e) => this.handleKeyDown(e));
+        window.addEventListener("keydown", (e) => {
+            this.handleKeyDown(e);
+        });
 
         // When mouse moves or touch occurs, keep focus updated smoothly
         document.addEventListener("pointerdown", (e) => {
@@ -16,7 +18,9 @@ const Navigation = {
     },
 
     setFocus(element, scrollIntoView = true) {
-        if (!element) return;
+        if (!element) {
+            return;
+        }
         if (this.currentFocus) {
             this.currentFocus.classList.remove("focused");
         }
@@ -54,6 +58,11 @@ const Navigation = {
     handleKeyDown(e) {
         const keyCode = e.keyCode;
 
+        // Wake and refresh online cinema stream player HUD on any key
+        if (window.Player && window.Player.isOpen) {
+            window.Player.showHudTemporarily();
+        }
+
         // Special D-pad handling when NativePlayer is playing offline video
         if (window.NativePlayer && window.NativePlayer.isOpen) {
             if (!window.NativePlayer.isHudVisible) {
@@ -77,7 +86,9 @@ const Navigation = {
                     e.preventDefault();
                     window.NativePlayer.showHud();
                     const playBtn = document.getElementById("native-play-btn");
-                    if (playBtn) this.setFocus(playBtn);
+                    if (playBtn) {
+                        this.setFocus(playBtn);
+                    }
                     return;
                 }
             } else {
@@ -132,7 +143,9 @@ const Navigation = {
 
     moveFocus(direction) {
         const scope = this.getActiveScope();
-        if (!scope) return;
+        if (!scope) {
+            return;
+        }
 
         const focusables = Array.from(scope.querySelectorAll(".focusable:not([disabled])"))
             .filter(el => {
@@ -140,7 +153,9 @@ const Navigation = {
                 return rect.width > 0 && rect.height > 0 && window.getComputedStyle(el).display !== "none";
             });
 
-        if (focusables.length === 0) return;
+        if (focusables.length === 0) {
+            return;
+        }
 
         if (!this.currentFocus || !scope.contains(this.currentFocus)) {
             this.setFocus(focusables[0]);
@@ -154,6 +169,26 @@ const Navigation = {
     },
 
     findNextFocusable(current, focusables, direction) {
+        // Explicit smooth navigation when Online Cinema Stream Player is open
+        if (window.Player && window.Player.isOpen) {
+            // Down (40) from top HUD (Server 1, Server 2, Server 3, or Back) -> Move directly down to Play Video button
+            if (direction === 40 && (current.classList.contains("server-btn") || current.id === "player-back-btn")) {
+                const playBtn = document.getElementById("stream-play-btn");
+                if (playBtn) {
+                    return playBtn;
+                }
+            }
+            // Up (38) from bottom stream action buttons -> Return directly to active server button or Back button
+            if (direction === 38 && current.classList.contains("stream-btn")) {
+                const activeServer = document.querySelector(".server-btn.active") || 
+                                     document.getElementById("server-btn-vidlink") || 
+                                     document.querySelector(".server-btn");
+                if (activeServer) {
+                    return activeServer;
+                }
+            }
+        }
+
         // 1. Navigation bar D-pad traversal
         if (current.classList.contains("nav-link")) {
             const navLinks = Array.from(document.querySelectorAll(".nav-link.focusable"));
@@ -168,14 +203,18 @@ const Navigation = {
             if (direction === 40) { // Down -> Move down to hero or top content
                 if (window.App && window.App.currentTab === "search") {
                     const searchInput = document.getElementById("search-input");
-                    if (searchInput) return searchInput;
+                    if (searchInput) {
+                        return searchInput;
+                    }
                 }
                 const heroPlay = document.getElementById("hero-play-btn");
                 if (heroPlay && window.getComputedStyle(heroPlay).display !== "none" && !heroPlay.closest(".hidden")) {
                     return heroPlay;
                 }
                 const firstContent = focusables.find(el => !el.classList.contains("nav-link"));
-                if (firstContent) return firstContent;
+                if (firstContent) {
+                    return firstContent;
+                }
             }
             if (direction === 38) { // Up
                 return null; // Already at top
@@ -186,12 +225,14 @@ const Navigation = {
         if (direction === 38) {
             if (current.closest(".hero-actions") || current.closest(".hero-billboard") || current.id === "search-input") {
                 const activeNav = document.querySelector(".nav-link.active") || document.querySelector(".nav-link");
-                if (activeNav) return activeNav;
+                if (activeNav) {
+                    return activeNav;
+                }
             }
         }
 
-        // 3. Try row-based movement first if inside a carousel
-        const currentRow = current.closest(".carousel-items");
+        // 3. Try row-based movement first if inside a carousel or button row
+        const currentRow = current.closest(".carousel-items") || current.closest(".stream-control-card") || current.closest(".player-servers");
 
         // 37 = Left, 39 = Right
         if (direction === 37 || direction === 39) {
@@ -218,7 +259,9 @@ const Navigation = {
         let bestDistance = Infinity;
 
         for (const candidate of focusables) {
-            if (candidate === current) continue;
+            if (candidate === current) {
+                continue;
+            }
 
             const cRect = candidate.getBoundingClientRect();
             const cCenter = {
@@ -249,10 +292,10 @@ const Navigation = {
             if (isValid) {
                 // Weight the primary direction more heavily
                 let distance;
-                if (direction === 38 || direction === 40) {
-                    distance = Math.abs(dy) * 1.0 + Math.abs(dx) * 2.5;
+                if (direction === 37 || direction === 39) {
+                    distance = Math.sqrt((dx * 2) * (dx * 2) + dy * dy);
                 } else {
-                    distance = Math.abs(dx) * 1.0 + Math.abs(dy) * 2.5;
+                    distance = Math.sqrt(dx * dx + (dy * 2) * (dy * 2));
                 }
 
                 if (distance < bestDistance) {

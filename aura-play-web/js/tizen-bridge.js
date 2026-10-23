@@ -120,12 +120,14 @@ const TizenBridge = {
     },
 
     preventScreenSaver(enable) {
-        if (!this.isTizen) return;
+        if (!this.isTizen) {
+            return;
+        }
         try {
             if (window.webapis && window.webapis.appcommon) {
-                const state = enable 
-                    ? window.webapis.appcommon.AppCommonScreenSaverState.SCREEN_SAVER_OFF
-                    : window.webapis.appcommon.AppCommonScreenSaverState.SCREEN_SAVER_ON;
+                const state = enable ? 
+                    window.webapis.appcommon.AppCommonScreenSaverState.SCREEN_SAVER_OFF : 
+                    window.webapis.appcommon.AppCommonScreenSaverState.SCREEN_SAVER_ON;
                 window.webapis.appcommon.setScreenSaver(state);
             }
         } catch (e) {
