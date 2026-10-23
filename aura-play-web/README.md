@@ -2,6 +2,8 @@
 
 A unified 4K Cinema & TV streaming app designed for **Samsung Smart TV (Tizen OS)** with remote control D-Pad navigation, as well as **Mobile & Desktop** browsers.
 
+👉 **Live Web App on GitHub Pages**: [https://georgeglyn.github.io/Aura-Play/](https://georgeglyn.github.io/Aura-Play/)
+
 ---
 
 ## 📺 How to Install on Samsung Smart TV (Tizen OS)
