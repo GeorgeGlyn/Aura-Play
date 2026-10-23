@@ -100,8 +100,7 @@ const Player = {
         }
 
         console.log(`[Player] Loading stream (${this.currentServer}): ${url}`);
-        // Enforce strict HTML5 sandbox that strips all popup capabilities (allow-popups excluded)
-        this.frame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-presentation");
+        this.frame.removeAttribute("sandbox");
         this.frame.src = url;
     },
 
