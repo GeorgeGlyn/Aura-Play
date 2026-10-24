@@ -54,6 +54,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
@@ -114,6 +115,7 @@ fun PlayerScreen(
     val activity = context as? Activity
     val window = activity?.window
     val isTvDevice = remember {
+        context.packageName.endsWith(".tv") ||
         context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK) ||
         (context.getSystemService(Context.UI_MODE_SERVICE) as? android.app.UiModeManager)?.currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION ||
         (context.resources.configuration.smallestScreenWidthDp >= 600 && context.packageManager.hasSystemFeature("android.hardware.type.television"))
@@ -226,8 +228,10 @@ fun WebStreamPlayer(
     val context = LocalContext.current
     val activity = context as? Activity
     val isTvDevice = remember {
+        context.packageName.endsWith(".tv") ||
         context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK) ||
-        (context.getSystemService(Context.UI_MODE_SERVICE) as? android.app.UiModeManager)?.currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+        (context.getSystemService(Context.UI_MODE_SERVICE) as? android.app.UiModeManager)?.currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION ||
+        (context.resources.configuration.smallestScreenWidthDp >= 600 && context.packageManager.hasSystemFeature("android.hardware.type.television"))
     }
 
     var isPlaying by remember { mutableStateOf(true) }
@@ -311,7 +315,7 @@ fun WebStreamPlayer(
     // When overlay appears on TV, request focus on center Play/Pause button for immediate remote control
     LaunchedEffect(showOverlay) {
         if (showOverlay && isTvDevice) {
-            delay(150)
+            delay(50)
             try {
                 centerPlayFocusRequester.requestFocus()
             } catch (e: Exception) {
@@ -645,6 +649,10 @@ fun WebStreamPlayer(
                             ViewGroup.LayoutParams.MATCH_PARENT
                         )
                         setBackgroundColor(android.graphics.Color.BLACK)
+                        if (isTvDevice) {
+                            isFocusable = false
+                            isFocusableInTouchMode = false
+                        }
 
                         settings.apply {
                             javaScriptEnabled = true
@@ -872,8 +880,10 @@ fun ExoPlayerStreamPlayer(
     val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     val activity = context as? Activity
     val isTvDevice = remember {
+        context.packageName.endsWith(".tv") ||
         context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK) ||
-        (context.getSystemService(Context.UI_MODE_SERVICE) as? android.app.UiModeManager)?.currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+        (context.getSystemService(Context.UI_MODE_SERVICE) as? android.app.UiModeManager)?.currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION ||
+        (context.resources.configuration.smallestScreenWidthDp >= 600 && context.packageManager.hasSystemFeature("android.hardware.type.television"))
     }
 
     val isLocalFile = remember(videoUrl) {
@@ -1215,7 +1225,7 @@ fun ExoPlayerStreamPlayer(
     // When controls appear on TV, focus the center Play/Pause button for immediate D-pad control
     LaunchedEffect(showControls) {
         if (showControls && isTvDevice) {
-            delay(150)
+            delay(50)
             try {
                 centerPlayFocusRequester.requestFocus()
             } catch (e: Exception) {
@@ -1558,9 +1568,8 @@ private fun TvPlayerIconButton(
         modifier = modifier
             .scale(scale)
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-            .focusable(interactionSource = interactionSource)
             .border(
-                width = if (isFocused) 3.dp else 0.dp,
+                width = if (isFocused) 3.5.dp else 0.dp,
                 color = if (isFocused) Color.White else Color.Transparent,
                 shape = CircleShape
             )
@@ -1594,7 +1603,7 @@ private fun TvPlayerChipButton(
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (isFocused) 1.15f else 1f,
+        targetValue = if (isFocused) 1.18f else 1f,
         label = "tv_chip_scale"
     )
 
@@ -1610,13 +1619,12 @@ private fun TvPlayerChipButton(
             else -> Color(0x33FFFFFF)
         },
         border = BorderStroke(
-            width = if (isFocused) 2.5.dp else 1.dp,
+            width = if (isFocused) 3.dp else 1.dp,
             color = if (isFocused) Color.White else Color(0x22FFFFFF)
         ),
         modifier = modifier
             .scale(scale)
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-            .focusable(interactionSource = interactionSource)
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -1660,6 +1668,15 @@ private fun BoxScope.PlayerControlsOverlay(
     isTv: Boolean = false,
     onSeek: (Float) -> Unit
 ) {
+    // Focus Requesters for clean TV remote D-pad navigation
+    val backFocusRequester = remember { FocusRequester() }
+    val rewindFocusRequester = remember { FocusRequester() }
+    val forwardFocusRequester = remember { FocusRequester() }
+    val speedFocusRequester = remember { FocusRequester() }
+    val fillFocusRequester = remember { FocusRequester() }
+    val tracksFocusRequester = remember { FocusRequester() }
+    val ultraPlayerFocusRequester = remember { FocusRequester() }
+
     // Dark Scrim
     Box(
         modifier = Modifier
@@ -1679,7 +1696,14 @@ private fun BoxScope.PlayerControlsOverlay(
     ) {
         TvPlayerIconButton(
             onClick = onBack,
-            modifier = Modifier.size(44.dp),
+            modifier = Modifier
+                .size(44.dp)
+                .focusProperties {
+                    down = centerPlayFocusRequester
+                    if (onSwitchToNative != null) right = ultraPlayerFocusRequester
+                    else if (onTracksClicked != null) right = tracksFocusRequester
+                },
+            focusRequester = backFocusRequester,
             onInteraction = onInteraction
         ) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
@@ -1717,6 +1741,12 @@ private fun BoxScope.PlayerControlsOverlay(
             if (onSwitchToNative != null) {
                 TvPlayerChipButton(
                     onClick = onSwitchToNative,
+                    modifier = Modifier.focusProperties {
+                        down = centerPlayFocusRequester
+                        left = backFocusRequester
+                        if (onTracksClicked != null) right = tracksFocusRequester
+                    },
+                    focusRequester = ultraPlayerFocusRequester,
                     onInteraction = onInteraction
                 ) {
                     Icon(Icons.Default.Bolt, contentDescription = null, tint = Color.Yellow, modifier = Modifier.size(16.dp))
@@ -1764,7 +1794,13 @@ private fun BoxScope.PlayerControlsOverlay(
             if (onTracksClicked != null) {
                 TvPlayerIconButton(
                     onClick = onTracksClicked,
-                    modifier = Modifier.size(44.dp),
+                    modifier = Modifier
+                        .size(44.dp)
+                        .focusProperties {
+                            down = centerPlayFocusRequester
+                            left = if (onSwitchToNative != null) ultraPlayerFocusRequester else backFocusRequester
+                        },
+                    focusRequester = tracksFocusRequester,
                     onInteraction = onInteraction
                 ) {
                     Icon(Icons.Default.Subtitles, contentDescription = "Audio & Subtitles", tint = Color.White)
@@ -1782,7 +1818,14 @@ private fun BoxScope.PlayerControlsOverlay(
         // -10s Rewind
         TvPlayerIconButton(
             onClick = { onSeekRelative(-10_000) },
-            modifier = Modifier.size(56.dp),
+            modifier = Modifier
+                .size(56.dp)
+                .focusProperties {
+                    up = backFocusRequester
+                    right = centerPlayFocusRequester
+                    down = speedFocusRequester
+                },
+            focusRequester = rewindFocusRequester,
             onInteraction = onInteraction
         ) {
             Icon(Icons.Default.Replay, contentDescription = "-10s", tint = Color.White, modifier = Modifier.size(30.dp))
@@ -1791,7 +1834,14 @@ private fun BoxScope.PlayerControlsOverlay(
         // Center Play / Pause Button
         TvPlayerIconButton(
             onClick = onPlayPause,
-            modifier = Modifier.size(76.dp),
+            modifier = Modifier
+                .size(76.dp)
+                .focusProperties {
+                    up = backFocusRequester
+                    left = rewindFocusRequester
+                    right = forwardFocusRequester
+                    down = speedFocusRequester
+                },
             focusRequester = centerPlayFocusRequester,
             onInteraction = onInteraction
         ) {
@@ -1806,7 +1856,14 @@ private fun BoxScope.PlayerControlsOverlay(
         // +10s Forward
         TvPlayerIconButton(
             onClick = { onSeekRelative(10_000) },
-            modifier = Modifier.size(56.dp),
+            modifier = Modifier
+                .size(56.dp)
+                .focusProperties {
+                    up = if (onTracksClicked != null) tracksFocusRequester else backFocusRequester
+                    left = centerPlayFocusRequester
+                    down = fillFocusRequester
+                },
+            focusRequester = forwardFocusRequester,
             onInteraction = onInteraction
         ) {
             Icon(Icons.Default.Refresh, contentDescription = "+10s", tint = Color.White, modifier = Modifier.size(30.dp))
@@ -1876,6 +1933,11 @@ private fun BoxScope.PlayerControlsOverlay(
                 // Speed controller button
                 TvPlayerChipButton(
                     onClick = onToggleSpeed,
+                    modifier = Modifier.focusProperties {
+                        up = centerPlayFocusRequester
+                        right = fillFocusRequester
+                    },
+                    focusRequester = speedFocusRequester,
                     onInteraction = onInteraction
                 ) {
                     Text(
@@ -1890,6 +1952,12 @@ private fun BoxScope.PlayerControlsOverlay(
                 TvPlayerChipButton(
                     onClick = onToggleFillScreen,
                     isSelected = isFillScreen,
+                    modifier = Modifier.focusProperties {
+                        up = centerPlayFocusRequester
+                        left = speedFocusRequester
+                        if (onTracksClicked != null) right = tracksFocusRequester
+                    },
+                    focusRequester = fillFocusRequester,
                     onInteraction = onInteraction
                 ) {
                     Icon(
@@ -1912,6 +1980,10 @@ private fun BoxScope.PlayerControlsOverlay(
                 // Audio & Subtitles button
                 TvPlayerChipButton(
                     onClick = onTracksClicked,
+                    modifier = Modifier.focusProperties {
+                        up = centerPlayFocusRequester
+                        left = fillFocusRequester
+                    },
                     onInteraction = onInteraction
                 ) {
                     Icon(Icons.Default.Subtitles, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
