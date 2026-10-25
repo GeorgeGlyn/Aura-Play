@@ -608,25 +608,34 @@ body {
     top: 0;
     left: 0;
     right: 0;
+    z-index: 400;
     padding: 24px 34px;
-    background: linear-gradient(180deg, rgba(0, 0, 0, 0.85) 0%, transparent 100%);
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.88) 0%, rgba(0, 0, 0, 0.5) 60%, transparent 100%);
     display: flex;
     align-items: center;
     justify-content: space-between;
-    transition: opacity 0.4s ease;
-    pointer-events: none;
-}
-
-.player-hud * {
-    pointer-events: auto;
+    transition: opacity 0.35s ease, visibility 0.35s ease;
 }
 
 .player-hud.fade-out {
     opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
 }
 
 .player-hud.fade-in {
     opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+}
+
+.player-back-btn,
+.player-action-btn,
+.server-btn {
+    pointer-events: auto !important;
+    cursor: pointer !important;
+    position: relative;
+    z-index: 410;
 }
 
 /* Remote Action Toast */

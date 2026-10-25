@@ -153,7 +153,8 @@ const Navigation = {
                 (this.currentFocus.id === "player-back-btn" || 
                  this.currentFocus.id === "player-audio-sub-btn" ||
                  this.currentFocus.id === "player-quality-btn" ||
-                 this.currentFocus.classList.contains("server-btn"));
+                 this.currentFocus.classList.contains("server-btn") ||
+                 (this.currentFocus.closest && this.currentFocus.closest(".player-hud") !== null));
 
             if (keyCode === 13 || keyCode === 32) { // OK / Enter / Space
                 e.preventDefault();
@@ -161,19 +162,30 @@ const Navigation = {
                     this.currentFocus.click();
                     return;
                 }
+                // If HUD is currently showing but no button focused, focus Audio & Subtitles button
+                if (window.Player && window.Player.isHudVisible) {
+                    const targetBtn = document.getElementById("player-audio-sub-btn") || 
+                                      document.getElementById("player-quality-btn") ||
+                                      document.querySelector(".server-btn.active") ||
+                                      document.getElementById("player-back-btn");
+                    if (targetBtn) {
+                        this.setFocus(targetBtn);
+                        return;
+                    }
+                }
                 window.Player.togglePlayPause();
                 return;
             }
 
-            if (keyCode === 38) { // Up -> Reveal Top HUD & Focus active server / quality button
+            if (keyCode === 38) { // Up -> Reveal Top HUD & Focus Audio & Subtitles or Active Server
                 e.preventDefault();
-                window.Player.showHudTemporarily();
+                window.Player.showHudTemporarily(8000);
                 if (!isTopHudFocused) {
-                    const activeServer = document.querySelector(".server-btn.active") || 
-                                         document.getElementById("player-quality-btn") ||
-                                         document.getElementById("player-audio-sub-btn") ||
-                                         document.getElementById("player-back-btn");
-                    if (activeServer) this.setFocus(activeServer);
+                    const activeBtn = document.getElementById("player-audio-sub-btn") || 
+                                      document.getElementById("player-quality-btn") ||
+                                      document.querySelector(".server-btn.active") ||
+                                      document.getElementById("player-back-btn");
+                    if (activeBtn) this.setFocus(activeBtn);
                 }
                 return;
             } else if (keyCode === 40) { // Down -> Hide Top HUD, return to clean video viewing
@@ -185,7 +197,7 @@ const Navigation = {
             } else if (keyCode === 37) { // Left -> Seek -10s or navigate Top HUD
                 e.preventDefault();
                 if (isTopHudFocused) {
-                    window.Player.showHudTemporarily();
+                    window.Player.showHudTemporarily(8000);
                     const hudButtons = [
                         document.getElementById("player-back-btn"),
                         document.getElementById("player-audio-sub-btn"),
@@ -206,7 +218,7 @@ const Navigation = {
             } else if (keyCode === 39) { // Right -> Seek +10s or navigate Top HUD
                 e.preventDefault();
                 if (isTopHudFocused) {
-                    window.Player.showHudTemporarily();
+                    window.Player.showHudTemporarily(8000);
                     const hudButtons = [
                         document.getElementById("player-back-btn"),
                         document.getElementById("player-audio-sub-btn"),

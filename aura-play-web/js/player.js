@@ -19,6 +19,7 @@ const Player = {
 
     // Audio & Subtitles State
     isAudioSubModalOpen: false,
+    isHudVisible: false,
     currentAudioTrack: localStorage.getItem("aura_audio") || "ta",
     currentSubtitle: "off",
     subtitleOffset: 0.0,
@@ -42,6 +43,45 @@ const Player = {
 
         this.updateQualityDisplay();
         this.updateAudioTrackDisplay();
+
+        // Wire explicit click listeners for top HUD action buttons
+        const audioSubBtn = document.getElementById("player-audio-sub-btn");
+        if (audioSubBtn) {
+            audioSubBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                this.openAudioSubModal('subtitles');
+            });
+        }
+        const qualityBtn = document.getElementById("player-quality-btn");
+        if (qualityBtn) {
+            qualityBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                this.openAudioSubModal('quality');
+            });
+        }
+        const backBtn = document.getElementById("player-back-btn");
+        if (backBtn) {
+            backBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                this.close();
+            });
+        }
+        const serverMap = {
+            "server-btn-vidsrcpm": "vidsrc_pm",
+            "server-btn-vidlink": "vidlink",
+            "server-btn-twoembed": "twoembed",
+            "server-btn-vidsrcsu": "vidsrc_su"
+        };
+        for (const btnId in serverMap) {
+            const btn = document.getElementById(btnId);
+            if (btn) {
+                const sKey = serverMap[btnId];
+                btn.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    this.switchServer(sKey);
+                });
+            }
+        }
 
         // Activity monitor to auto-hide HUD
         window.addEventListener("mousemove", () => {
@@ -138,19 +178,15 @@ const Player = {
             this.updateSubtitleCue();
         }, 250);
 
-        // Clear navigation focus so parent window retains full TV remote control
-        if (window.Navigation && window.Navigation.currentFocus) {
-            window.Navigation.currentFocus.classList.remove("focused");
-            window.Navigation.currentFocus.blur();
-            window.Navigation.currentFocus = null;
-        }
+        // Position initial focus on Audio & Subtitles button so TV remote immediately has active navigation
+        setTimeout(() => {
+            const initialBtn = document.getElementById("player-audio-sub-btn") || document.getElementById("player-back-btn");
+            if (initialBtn && window.Navigation) {
+                window.Navigation.setFocus(initialBtn);
+            }
+        }, 150);
 
-        // Ensure parent container has focus to capture all TV remote keys
-        if (this.container) {
-            this.container.focus();
-        }
-
-        this.showHudTemporarily();
+        this.showHudTemporarily(7000);
     },
 
     recordProgress() {
@@ -506,8 +542,9 @@ const Player = {
         }, 1400);
     },
 
-    showHudTemporarily(duration = 5000) {
+    showHudTemporarily(duration = 7000) {
         if (!this.isOpen || this.isAudioSubModalOpen) return;
+        this.isHudVisible = true;
         if (this.hud) {
             this.hud.classList.remove("fade-out");
             this.hud.classList.add("fade-in");
@@ -521,7 +558,8 @@ const Player = {
                     (window.Navigation.currentFocus.id === "player-back-btn" || 
                      window.Navigation.currentFocus.id === "player-audio-sub-btn" ||
                      window.Navigation.currentFocus.id === "player-quality-btn" ||
-                     window.Navigation.currentFocus.classList.contains("server-btn"));
+                     window.Navigation.currentFocus.classList.contains("server-btn") ||
+                     (window.Navigation.currentFocus.closest && window.Navigation.currentFocus.closest(".player-hud")));
                 if (!isHudFocused) {
                     this.hideHud();
                 } else {
@@ -533,6 +571,7 @@ const Player = {
     },
 
     hideHud() {
+        this.isHudVisible = false;
         if (this.hud) {
             this.hud.classList.remove("fade-in");
             this.hud.classList.add("fade-out");
@@ -542,7 +581,8 @@ const Player = {
             (window.Navigation.currentFocus.id === "player-back-btn" || 
              window.Navigation.currentFocus.id === "player-audio-sub-btn" ||
              window.Navigation.currentFocus.id === "player-quality-btn" ||
-             window.Navigation.currentFocus.classList.contains("server-btn"));
+             window.Navigation.currentFocus.classList.contains("server-btn") ||
+             (window.Navigation.currentFocus.closest && window.Navigation.currentFocus.closest(".player-hud")));
         if (isHudFocused && window.Navigation) {
             window.Navigation.currentFocus.classList.remove("focused");
             window.Navigation.currentFocus.blur();

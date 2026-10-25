@@ -385,8 +385,38 @@ body.tizen-tv .downloads-empty p {
    Online Cinema Stream Player Top HUD (Clean, unobtrusive, upscaled)
    ------------------------------------------------------------------------- */
 body.tizen-tv .player-hud {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 400 !important;
     padding: 32px 54px;
-    background: linear-gradient(180deg, rgba(0, 0, 0, 0.9) 0%, transparent 100%);
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.95) 0%, rgba(0, 0, 0, 0.6) 60%, transparent 100%);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    transition: opacity 0.35s ease, visibility 0.35s ease;
+}
+
+body.tizen-tv .player-hud.fade-in {
+    opacity: 1 !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+}
+
+body.tizen-tv .player-hud.fade-out {
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+
+body.tizen-tv .player-back-btn,
+body.tizen-tv .player-action-btn,
+body.tizen-tv .server-btn {
+    pointer-events: auto !important;
+    cursor: pointer !important;
+    position: relative;
+    z-index: 410 !important;
 }
 
 body.tizen-tv .player-back-btn {
@@ -416,12 +446,22 @@ body.tizen-tv .server-btn {
     border-radius: 10px;
 }
 
-body.tizen-tv .server-btn.focused {
-    transform: scale(1.18) !important;
+body.tizen-tv .player-action-btn {
+    font-size: 18px;
+    padding: 14px 28px;
+    border-radius: 12px;
+}
+
+body.tizen-tv .server-btn.focused,
+body.tizen-tv .player-action-btn.focused,
+body.tizen-tv .player-back-btn.focused {
+    transform: scale(1.15) !important;
     outline: 4px solid #FFFFFF !important;
     outline-offset: 3px !important;
-    box-shadow: 0 0 35px rgba(255, 255, 255, 0.95) !important;
-    z-index: 10;
+    background: #E50914 !important;
+    color: #FFFFFF !important;
+    box-shadow: 0 0 35px rgba(229, 9, 20, 0.95) !important;
+    z-index: 420 !important;
 }
 
 body.tizen-tv .quality-card {
