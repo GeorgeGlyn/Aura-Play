@@ -144,6 +144,23 @@
         </div>
     </div>
 
+    <!-- Delete Download Confirmation Modal -->
+    <div class="modal-overlay hidden" id="delete-download-modal">
+        <div class="delete-download-card">
+            <div class="delete-modal-icon">🗑</div>
+            <h3 class="delete-modal-title">Remove Download</h3>
+            <p class="delete-modal-desc" id="delete-download-text">Are you sure you want to remove this download?</p>
+            <div class="delete-modal-actions">
+                <button class="btn btn-secondary focusable" id="delete-download-cancel-btn" tabindex="0" onclick="DownloadUI.closeDeleteModal()">
+                    Cancel
+                </button>
+                <button class="btn btn-danger focusable" id="delete-download-confirm-btn" tabindex="0" onclick="DownloadUI.executeDelete()">
+                    🗑 Remove
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Fullscreen Cinema Player -->
     <div class="player-container hidden" id="player-container">
         <iframe id="player-frame" 

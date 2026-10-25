@@ -528,3 +528,26 @@ body.tizen-tv .audio-card-info p {
     box-shadow: 0 0 30px rgba(229, 9, 20, 0.9) !important;
     outline: none !important;
 }
+
+body.tizen-tv .delete-download-card {
+    max-width: 660px;
+    padding: 48px 42px 40px;
+}
+
+body.tizen-tv .delete-modal-icon {
+    font-size: 64px;
+}
+
+body.tizen-tv .delete-modal-title {
+    font-size: 34px;
+}
+
+body.tizen-tv .delete-modal-desc {
+    font-size: 20px;
+    margin-bottom: 36px;
+}
+
+body.tizen-tv .btn-danger {
+    font-size: 20px;
+    padding: 16px 36px;
+}

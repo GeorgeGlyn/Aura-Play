@@ -87,6 +87,13 @@ const TizenBridge = {
             return;
         }
 
+        // 0. If Delete Download modal is open, close it
+        const deleteModal = document.getElementById("delete-download-modal");
+        if (deleteModal && !deleteModal.classList.contains("hidden")) {
+            if (window.DownloadUI) window.DownloadUI.closeDeleteModal();
+            return;
+        }
+
         // 1. If embed video player is open:
         if (window.Player && window.Player.isOpen) {
             if (window.Player.isAudioSubModalOpen) {

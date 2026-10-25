@@ -1415,7 +1415,68 @@ body {
     color: #ff6b6b;
 }
 .dl-btn-delete:hover, .dl-btn-delete.focused {
-    background: rgba(255, 60, 60, 0.25);
+    background: rgba(255, 60, 60, 0.3) !important;
+    outline: 3px solid #ffffff !important;
+    transform: scale(1.08);
+}
+
+/* Delete Download Confirmation Dialog */
+.delete-download-card {
+    position: relative;
+    width: 100%;
+    max-width: 520px;
+    background: #14141c;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: var(--radius-md);
+    padding: 36px 32px 30px;
+    text-align: center;
+    box-shadow: 0 25px 70px rgba(0, 0, 0, 0.95);
+    animation: modalSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.delete-modal-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+    display: inline-block;
+}
+
+.delete-modal-title {
+    font-size: 26px;
+    font-weight: 800;
+    margin-bottom: 12px;
+    color: #fff;
+}
+
+.delete-modal-desc {
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    margin-bottom: 28px;
+}
+
+.delete-modal-actions {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+}
+
+.btn-danger {
+    background: #E50914;
+    color: #fff;
+    border: none;
+    padding: 12px 28px;
+    font-size: 16px;
+    font-weight: 700;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.btn-danger.focused,
+.btn-danger:focus {
+    transform: scale(1.08);
+    outline: 3px solid #ffffff !important;
+    box-shadow: 0 0 25px rgba(229, 9, 20, 0.9) !important;
 }
 
 /* ---- Quality Picker ---- */

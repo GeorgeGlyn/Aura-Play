@@ -274,6 +274,10 @@ const Downloader = {
             DownloadUI.showToast(`✅ "${label}" downloaded! Ready to watch offline.`, "success");
 
         } catch (err) {
+            if (this.activeDownloads[key] && this.activeDownloads[key].isDeleting) {
+                delete this.activeDownloads[key];
+                return;
+            }
             if (err.name === "AbortError") {
                 await IDB.put({ ...(await IDB.get(key)), status: "cancelled" });
                 DownloadUI.showToast(`Download cancelled: "${label}"`, "info");
@@ -293,12 +297,54 @@ const Downloader = {
     },
 
     async deleteDownload(key) {
-        await this.cancelDownload(key);
-        const rec = await IDB.get(key);
-        if (rec && rec.objectUrl) URL.revokeObjectURL(rec.objectUrl);
-        await IDB.delete(key);
-        DownloadUI.renderLibrary();
-        DownloadUI.showToast("Download removed from library.", "info");
+        try {
+            // 1. Mark isDeleting so abort catch block never resurrects the record
+            if (this.activeDownloads[key]) {
+                this.activeDownloads[key].isDeleting = true;
+                try {
+                    this.activeDownloads[key].controller.abort();
+                } catch (e) {}
+                delete this.activeDownloads[key];
+            }
+
+            // 2. Revoke any memory object URL
+            try {
+                const rec = await IDB.get(key);
+                if (rec && rec.objectUrl) URL.revokeObjectURL(rec.objectUrl);
+            } catch (e) {}
+
+            // 3. Delete record from IndexedDB
+            await IDB.delete(key);
+
+            // 4. Remove offline continue watching reference if present
+            if (window.App && typeof window.App.getContinueWatching === "function") {
+                try {
+                    const cw = window.App.getContinueWatching();
+                    const filtered = cw.filter(i => !(i.isOffline && i.offlineKey === key));
+                    if (filtered.length !== cw.length) {
+                        localStorage.setItem("aura_continue_watching", JSON.stringify(filtered));
+                        if (typeof window.App.renderContinueWatchingRow === "function") {
+                            window.App.renderContinueWatchingRow();
+                        }
+                    }
+                } catch (e) {}
+            }
+
+            // 5. Re-render downloads library
+            await DownloadUI.renderLibrary();
+            DownloadUI.showToast("🗑 Download removed from library.", "info");
+
+            // 6. Retain TV remote focus
+            if (window.Navigation) {
+                const nextFocus = document.querySelector("#downloads-grid .dl-btn-delete") || 
+                                 document.querySelector(".nav-link[data-tab='downloads']") ||
+                                 document.body;
+                window.Navigation.setFocus(nextFocus);
+            }
+        } catch (err) {
+            console.error("[Downloader] Failed to delete download:", err);
+            DownloadUI.showToast("Failed to remove download: " + err.message, "error");
+        }
     },
 
     // Re-create objectURL after page reload (blobs don't survive across sessions
@@ -867,7 +913,8 @@ const DownloadUI = {
                                 </button>
                             ` : ""}
                             <button class="dl-btn dl-btn-delete focusable" tabindex="0"
-                                    onclick="DownloadUI.confirmDelete('${item.key}', '${item.title.replace(/'/g, "\\'")}')">
+                                    data-key="${item.key}"
+                                    onclick="DownloadUI.confirmDelete('${item.key}')">
                                 🗑 Remove
                             </button>
                         </div>
@@ -892,9 +939,54 @@ const DownloadUI = {
         }
     },
 
-    confirmDelete(key, title) {
-        if (window.confirm(`Remove "${title}" from your downloads?`)) {
-            Downloader.deleteDownload(key);
+    pendingDeleteKey: null,
+
+    async confirmDelete(key) {
+        this.pendingDeleteKey = key;
+        const rec = await Downloader.getDownload(key);
+        const title = rec ? (rec.title || "this video") : "this video";
+        const sizeStr = rec && rec.sizeBytes ? ` (${(rec.sizeBytes / (1024*1024)).toFixed(0)} MB)` : "";
+
+        const modal = document.getElementById("delete-download-modal");
+        const text = document.getElementById("delete-download-text");
+        if (text) {
+            text.innerHTML = `Are you sure you want to remove <strong>${title}</strong>${sizeStr} from your downloads?<br><span style="opacity:0.75; font-size:14px; margin-top:8px; display:inline-block;">This will permanently free up offline storage on your device.</span>`;
+        }
+
+        if (modal) {
+            modal.classList.remove("hidden");
+            modal.classList.add("active");
+            const confirmBtn = document.getElementById("delete-download-confirm-btn");
+            if (confirmBtn && window.Navigation) {
+                setTimeout(() => window.Navigation.setFocus(confirmBtn), 50);
+            }
+        } else {
+            // Direct delete fallback
+            await Downloader.deleteDownload(key);
+        }
+    },
+
+    closeDeleteModal() {
+        const modal = document.getElementById("delete-download-modal");
+        if (modal) {
+            modal.classList.remove("active");
+            modal.classList.add("hidden");
+        }
+        this.pendingDeleteKey = null;
+        if (window.Navigation) {
+            const firstCardBtn = document.querySelector("#downloads-grid .dl-btn-delete") || 
+                                 document.querySelector(".nav-link[data-tab='downloads']");
+            if (firstCardBtn) {
+                window.Navigation.setFocus(firstCardBtn);
+            }
+        }
+    },
+
+    async executeDelete() {
+        const key = this.pendingDeleteKey;
+        this.closeDeleteModal();
+        if (key) {
+            await Downloader.deleteDownload(key);
         }
     },
 

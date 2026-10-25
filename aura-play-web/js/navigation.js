@@ -58,6 +58,34 @@ const Navigation = {
     handleKeyDown(e) {
         const keyCode = e.keyCode;
 
+        // If Delete Download Confirmation Modal is open
+        const deleteModal = document.getElementById("delete-download-modal");
+        if (deleteModal && !deleteModal.classList.contains("hidden")) {
+            if (keyCode === 27) { // Escape / Back
+                e.preventDefault();
+                if (window.DownloadUI) window.DownloadUI.closeDeleteModal();
+                return;
+            }
+            if (keyCode === 13) { // Enter / OK
+                e.preventDefault();
+                if (this.currentFocus) this.currentFocus.click();
+                return;
+            }
+            if (keyCode === 37) { // Left -> Focus Cancel
+                e.preventDefault();
+                const cancelBtn = document.getElementById("delete-download-cancel-btn");
+                if (cancelBtn) this.setFocus(cancelBtn);
+                return;
+            }
+            if (keyCode === 39) { // Right -> Focus Remove
+                e.preventDefault();
+                const confirmBtn = document.getElementById("delete-download-confirm-btn");
+                if (confirmBtn) this.setFocus(confirmBtn);
+                return;
+            }
+            return;
+        }
+
         // Wake and refresh online cinema stream player HUD on any key
         if (window.Player && window.Player.isOpen) {
             window.Player.showHudTemporarily();
@@ -227,6 +255,11 @@ const Navigation = {
     },
 
     getActiveScope() {
+        // If Delete Download Confirmation Modal is open, scope to it
+        const deleteModal = document.getElementById("delete-download-modal");
+        if (deleteModal && !deleteModal.classList.contains("hidden")) {
+            return deleteModal;
+        }
         // If Native offline player is open, scope to native player controls
         if (window.NativePlayer && window.NativePlayer.isOpen) {
             return document.getElementById("native-player-container");
