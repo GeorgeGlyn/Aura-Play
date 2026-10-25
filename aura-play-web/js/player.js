@@ -665,16 +665,24 @@ const Player = {
             } catch (e) {}
         }
 
-        // If on VidLink or server that takes quality param in URL, refresh stream cleanly carrying over elapsed time
-        if (this.currentServer === "vidlink") {
-            const elapsed = this.currentTime > 0
-                ? this.currentTime
-                : Math.floor((Date.now() - this.playStartTime) / 1000) + (this.initialStartTime || 0);
-            this.initialStartTime = elapsed;
-            this.currentTime = elapsed;
-            this.playStartTime = Date.now();
-            this.loadStreamUrl();
+        // Seamlessly carry over elapsed playback position
+        const elapsed = this.currentTime > 0
+            ? this.currentTime
+            : Math.floor((Date.now() - this.playStartTime) / 1000) + (this.initialStartTime || 0);
+        this.initialStartTime = elapsed;
+        this.currentTime = elapsed;
+        this.playStartTime = Date.now();
+
+        // If a specific resolution is selected and on Server 1 (which lacks resolution parameters),
+        // switch to Server 2 (VidLink Pro) which provides multi-resolution streaming
+        if (qualityKey !== "auto" && this.currentServer === "vidsrc_pm") {
+            this.currentServer = "vidlink";
+            this.updateServerButtons();
+            this.showToast(`Switched to Server 2 for ${displayName}`);
         }
+
+        // Always reload stream URL with selected quality parameter
+        this.loadStreamUrl();
 
         // Auto close modal smoothly so viewer sees their chosen stream
         setTimeout(() => {
