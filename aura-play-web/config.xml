@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <widget xmlns:tizen="http://tizen.org/ns/widgets" xmlns="http://www.w3.org/ns/widgets" id="http://creativemedialabs.com/AuraPlay" version="1.0.0" viewmodes="maximized">
     <access origin="*" subdomains="true"></access>
+    <tizen:allow-navigation>*</tizen:allow-navigation>
     <tizen:application id="AuraPlayTV.AuraPlay" package="AuraPlayTV" required_version="3.0"/>
     <author href="https://github.com/GeorgeGlyn/Aura-Play">Creative Media Labs</author>
     <content src="index.html"/>

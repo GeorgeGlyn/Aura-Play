@@ -111,6 +111,16 @@ const Navigation = {
                 }
             }
 
+            // If active element is the player iframe, allow Enter and Space to pass directly into the web player
+            if (document.activeElement && document.activeElement.tagName === "IFRAME") {
+                if (keyCode === 13 || keyCode === 32) {
+                    if (window.Player && typeof window.Player.interactStream === "function") {
+                        window.Player.interactStream();
+                    }
+                    return;
+                }
+            }
+
             e.preventDefault();
 
             if (keyCode === 13) {

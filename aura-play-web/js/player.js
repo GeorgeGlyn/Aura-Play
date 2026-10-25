@@ -2,7 +2,7 @@
 const Player = {
     isOpen: false,
     currentMedia: null,
-    currentServer: "vidlink",
+    currentServer: "vidsrc_pm",
     hideTimeout: null,
     initialStartTime: 0,
     playStartTime: 0,
@@ -141,32 +141,44 @@ const Player = {
         const timeParam = startSec > 5 ? `&startAt=${startSec}&t=${startSec}` : "";
 
         switch (this.currentServer) {
-            case "vidsrc_xyz":
+            case "moviesapi":
                 url = isTv 
-                    ? `https://vidsrc.xyz/embed/tv?tmdb=${id}&season=${s}&episode=${e}${timeParam}`
-                    : `https://vidsrc.xyz/embed/movie?tmdb=${id}${timeParam}`;
+                    ? `https://player.moviesapi.vip/tv/${id}/${s}/${e}`
+                    : `https://player.moviesapi.vip/movie/${id}`;
                 break;
-            case "vidsrc_cc":
+            case "twoembed":
                 url = isTv 
-                    ? `https://vidsrc.cc/v2/embed/tv/${id}/${s}/${e}${timeParam}`
-                    : `https://vidsrc.cc/v2/embed/movie/${id}${timeParam}`;
-                break;
-            case "autoembed":
-                url = isTv 
-                    ? `https://autoembed.co/tv/tmdb/${id}-${s}-${e}${startSec > 5 ? '?time=' + startSec : ''}`
-                    : `https://autoembed.co/movie/tmdb/${id}${startSec > 5 ? '?time=' + startSec : ''}`;
+                    ? `https://www.2embed.skin/embed/tv/${id}/${s}/${e}`
+                    : `https://www.2embed.skin/embed/${id}`;
                 break;
             case "vidlink":
-            default:
                 url = isTv 
                     ? `https://vidlink.pro/tv/${id}/${s}/${e}?autoplay=true&primaryColor=E50914${timeParam}`
                     : `https://vidlink.pro/movie/${id}?autoplay=true&primaryColor=E50914${timeParam}`;
+                break;
+            case "vidsrc_pm":
+            default:
+                url = isTv 
+                    ? `https://vidsrc.pm/embed/tv/${id}/${s}/${e}`
+                    : `https://vidsrc.pm/embed/movie/${id}`;
                 break;
         }
 
         console.log(`[Player] Loading stream (${this.currentServer}): ${url} (startAt: ${startSec}s)`);
         this.frame.removeAttribute("sandbox");
         this.frame.src = url;
+
+        // Auto-play attempt: poll nested iframes for play button and start video
+        if (this.autoPlayInterval) clearInterval(this.autoPlayInterval);
+        let attempts = 0;
+        this.autoPlayInterval = setInterval(() => {
+            attempts++;
+            if (!this.isOpen || attempts > 15) {
+                clearInterval(this.autoPlayInterval);
+                return;
+            }
+            this.triggerDeepPlay();
+        }, 800);
     },
 
     switchServer(serverKey) {
@@ -182,10 +194,10 @@ const Player = {
 
     updateServerButtons() {
         const serverMap = {
-            "vidlink": document.getElementById("server-btn-vidlink"),
-            "vidsrc_cc": document.getElementById("server-btn-vidsrc"),
-            "vidsrc_xyz": document.getElementById("server-btn-vidsrcxyz"),
-            "autoembed": document.getElementById("server-btn-autoembed")
+            "vidsrc_pm": document.getElementById("server-btn-vidsrcpm"),
+            "moviesapi": document.getElementById("server-btn-moviesapi"),
+            "twoembed": document.getElementById("server-btn-twoembed"),
+            "vidlink": document.getElementById("server-btn-vidlink")
         };
         for (const key in serverMap) {
             const btn = serverMap[key];
@@ -199,6 +211,89 @@ const Player = {
         }
     },
 
+    triggerDeepPlay(targetDoc) {
+        const frame = document.getElementById("player-frame");
+        if (!frame) return false;
+        const rootDoc = targetDoc || frame.contentDocument || (frame.contentWindow ? frame.contentWindow.document : null);
+        if (!rootDoc) return false;
+
+        function walk(doc) {
+            if (!doc) return false;
+            let played = false;
+
+            // Remove transparent / invisible clickjacking overlays
+            try {
+                const overlays = doc.querySelectorAll('div, a');
+                for (let i = 0; i < overlays.length; i++) {
+                    const el = overlays[i];
+                    const s = doc.defaultView ? doc.defaultView.getComputedStyle(el) : el.style;
+                    if (s && (s.position === 'fixed' || s.position === 'absolute')) {
+                        const z = parseInt(s.zIndex, 10);
+                        if (z >= 99 && !el.querySelector('video') && !el.querySelector('svg')) {
+                            const op = parseFloat(s.opacity);
+                            if (op < 0.05 || s.backgroundColor === 'transparent') {
+                                el.remove();
+                            }
+                        }
+                    }
+                }
+            } catch(e) {}
+
+            // 1. Click backdrop wrapper or 2embed play container
+            const backdrop = doc.getElementById("backdrop-screen") || doc.querySelector(".playbtnx");
+            if (backdrop) {
+                try { backdrop.click(); played = true; } catch(e) {}
+            }
+
+            // 2. Click play button elements
+            const playBtns = doc.querySelectorAll('button[aria-label*="Play"], [data-play-button], #play-btn, .play-btn, .vjs-big-play-button, .vjs-play-control, .jw-display-icon-container');
+            for (let i = 0; i < playBtns.length; i++) {
+                try { playBtns[i].click(); played = true; } catch(e) {}
+            }
+
+            // 3. Click play SVG icons
+            const svgPath = doc.querySelector('path[d^="M21.4086"]');
+            if (svgPath) {
+                const parent = svgPath.closest('div[style*="cursor: pointer"]') || svgPath.parentElement;
+                if (parent) {
+                    try { parent.click(); played = true; } catch(e) {}
+                }
+            }
+
+            // 4. Trigger HTML5 video element directly
+            const videos = doc.querySelectorAll('video');
+            for (let i = 0; i < videos.length; i++) {
+                const v = videos[i];
+                if (v && v.paused) {
+                    try {
+                        v.muted = false;
+                        v.play().catch(() => {});
+                        played = true;
+                    } catch(e) {}
+                }
+            }
+
+            // 5. Recurse into child iframes
+            const iframes = doc.querySelectorAll('iframe');
+            for (let i = 0; i < iframes.length; i++) {
+                try {
+                    const childDoc = iframes[i].contentDocument || (iframes[i].contentWindow ? iframes[i].contentWindow.document : null);
+                    if (childDoc && walk(childDoc)) {
+                        played = true;
+                    }
+                } catch(e) {}
+            }
+
+            return played;
+        }
+
+        try {
+            return walk(rootDoc);
+        } catch(e) {
+            return false;
+        }
+    },
+
     interactStream() {
         this.showHudTemporarily();
         const frame = document.getElementById("player-frame");
@@ -207,14 +302,21 @@ const Player = {
             if (frame.contentWindow) {
                 try {
                     frame.contentWindow.focus();
-                    // Dispatch standard HTML5 video message triggers across origins
-                    frame.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
-                    frame.contentWindow.postMessage({ type: 'play' }, '*');
-                } catch (e) {
-                    // Ignore cross-origin access limitations
-                }
+                } catch(e) {}
             }
+
+            // 1. Trigger deep play in all accessible documents
+            const played = this.triggerDeepPlay();
+
+            // 2. Dispatch cross-origin triggers for protected embeds
+            try {
+                frame.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
+                frame.contentWindow.postMessage({ type: 'play' }, '*');
+                const keyEvt = new KeyboardEvent('keydown', { key: ' ', code: 'Space', keyCode: 32, bubbles: true });
+                frame.contentWindow.dispatchEvent(keyEvt);
+            } catch(e) {}
         }
+
         const playIcon = document.getElementById("stream-play-icon");
         if (playIcon) {
             playIcon.textContent = playIcon.textContent === "▶" ? "⏸" : "▶";
@@ -229,18 +331,51 @@ const Player = {
         const frame = document.getElementById("player-frame");
         if (frame) {
             frame.focus();
-            if (frame.contentWindow) {
+            function focusInnermost(f) {
+                if (!f) return;
                 try {
-                    frame.contentWindow.focus();
-                } catch (e) {}
+                    f.focus();
+                    if (f.contentWindow) f.contentWindow.focus();
+                    const doc = f.contentDocument || (f.contentWindow ? f.contentWindow.document : null);
+                    if (doc) {
+                        const childIframe = doc.querySelector('iframe');
+                        if (childIframe) focusInnermost(childIframe);
+                    }
+                } catch(e) {}
             }
+            focusInnermost(frame);
         }
     },
 
     seek(seconds) {
         this.showHudTemporarily();
         const frame = document.getElementById("player-frame");
-        if (frame && frame.contentWindow) {
+        if (!frame) return;
+
+        // 1. Try deep seek in accessible video elements
+        try {
+            const rootDoc = frame.contentDocument || (frame.contentWindow ? frame.contentWindow.document : null);
+            function seekInDoc(doc) {
+                if (!doc) return false;
+                const v = doc.querySelector('video');
+                if (v) {
+                    v.currentTime = Math.max(0, Math.min(v.duration || 999999, v.currentTime + seconds));
+                    return true;
+                }
+                const iframes = doc.querySelectorAll('iframe');
+                for (let i = 0; i < iframes.length; i++) {
+                    try {
+                        const c = iframes[i].contentDocument || (iframes[i].contentWindow ? iframes[i].contentWindow.document : null);
+                        if (c && seekInDoc(c)) return true;
+                    } catch(e) {}
+                }
+                return false;
+            }
+            if (rootDoc) seekInDoc(rootDoc);
+        } catch(e) {}
+
+        // 2. Dispatch cross-origin seek message
+        if (frame.contentWindow) {
             try {
                 frame.contentWindow.postMessage({ type: 'seek', offset: seconds }, '*');
             } catch (e) {}

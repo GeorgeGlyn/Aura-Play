@@ -374,17 +374,29 @@ fun WebStreamPlayer(
         }
     }
 
-    // HTML5 Video Playback Controls via JavaScript
+    // HTML5 Video Playback Controls via JavaScript (with recursive nested iframe traversal)
     val onPlayPause: () -> Unit = {
         resetControlsTimer()
         webViewRef?.evaluateJavascript(
             """
             (function() {
-                var v = document.querySelector('video');
-                if (v) {
-                    if (v.paused) { v.play(); return false; } else { v.pause(); return true; }
+                function toggleVideo(doc) {
+                    if (!doc) return null;
+                    var v = doc.querySelector('video');
+                    if (v) {
+                        if (v.paused) { v.play().catch(function(){}); return false; }
+                        else { v.pause(); return true; }
+                    }
+                    var iframes = doc.querySelectorAll('iframe');
+                    for (var i = 0; i < iframes.length; i++) {
+                        try {
+                            var res = toggleVideo(iframes[i].contentDocument || iframes[i].contentWindow.document);
+                            if (res !== null) return res;
+                        } catch(e) {}
+                    }
+                    return null;
                 }
-                return null;
+                return toggleVideo(document);
             })();
             """.trimIndent()
         ) { res ->
@@ -400,13 +412,24 @@ fun WebStreamPlayer(
         webViewRef?.evaluateJavascript(
             """
             (function() {
-                var v = document.querySelector('video');
-                if (v) {
-                    var newTime = Math.max(0, Math.min(v.duration || 999999, v.currentTime + ($deltaSec)));
-                    v.currentTime = newTime;
-                    return newTime;
+                function seekVideo(doc) {
+                    if (!doc) return null;
+                    var v = doc.querySelector('video');
+                    if (v) {
+                        var newTime = Math.max(0, Math.min(v.duration || 999999, v.currentTime + ($deltaSec)));
+                        v.currentTime = newTime;
+                        return newTime;
+                    }
+                    var iframes = doc.querySelectorAll('iframe');
+                    for (var i = 0; i < iframes.length; i++) {
+                        try {
+                            var res = seekVideo(iframes[i].contentDocument || iframes[i].contentWindow.document);
+                            if (res !== null) return res;
+                        } catch(e) {}
+                    }
+                    return null;
                 }
-                return null;
+                return seekVideo(document);
             })();
             """.trimIndent()
         ) { res ->
@@ -423,12 +446,23 @@ fun WebStreamPlayer(
         webViewRef?.evaluateJavascript(
             """
             (function() {
-                var v = document.querySelector('video');
-                if (v && v.duration) {
-                    v.currentTime = v.duration * $fraction;
-                    return v.currentTime;
+                function seekFraction(doc) {
+                    if (!doc) return null;
+                    var v = doc.querySelector('video');
+                    if (v && v.duration) {
+                        v.currentTime = v.duration * $fraction;
+                        return v.currentTime;
+                    }
+                    var iframes = doc.querySelectorAll('iframe');
+                    for (var i = 0; i < iframes.length; i++) {
+                        try {
+                            var res = seekFraction(iframes[i].contentDocument || iframes[i].contentWindow.document);
+                            if (res !== null) return res;
+                        } catch(e) {}
+                    }
+                    return null;
                 }
-                return null;
+                return seekFraction(document);
             })();
             """.trimIndent()
         ) { res ->
@@ -451,8 +485,19 @@ fun WebStreamPlayer(
         webViewRef?.evaluateJavascript(
             """
             (function() {
-                var v = document.querySelector('video');
-                if (v) { v.playbackRate = $nextSpeed; }
+                function speedVideo(doc) {
+                    if (!doc) return false;
+                    var v = doc.querySelector('video');
+                    if (v) { v.playbackRate = $nextSpeed; return true; }
+                    var iframes = doc.querySelectorAll('iframe');
+                    for (var i = 0; i < iframes.length; i++) {
+                        try {
+                            if (speedVideo(iframes[i].contentDocument || iframes[i].contentWindow.document)) return true;
+                        } catch(e) {}
+                    }
+                    return false;
+                }
+                speedVideo(document);
             })();
             """.trimIndent(),
             null
@@ -470,8 +515,19 @@ fun WebStreamPlayer(
             webViewRef?.evaluateJavascript(
                 """
                 (function() {
-                    var v = document.querySelector('video');
-                    if (v) { v.currentTime = $seekSec; }
+                    function resumeVideo(doc) {
+                        if (!doc) return false;
+                        var v = doc.querySelector('video');
+                        if (v) { v.currentTime = $seekSec; return true; }
+                        var iframes = doc.querySelectorAll('iframe');
+                        for (var i = 0; i < iframes.length; i++) {
+                            try {
+                                if (resumeVideo(iframes[i].contentDocument || iframes[i].contentWindow.document)) return true;
+                            } catch(e) {}
+                        }
+                        return false;
+                    }
+                    resumeVideo(document);
                 })();
                 """.trimIndent(),
                 null
@@ -488,15 +544,26 @@ fun WebStreamPlayer(
                 webViewRef?.evaluateJavascript(
                     """
                     (function() {
-                        var v = document.querySelector('video');
-                        if (v) {
-                            return JSON.stringify({
-                                curr: Math.floor((v.currentTime || 0) * 1000),
-                                dur: Math.floor((v.duration || 0) * 1000),
-                                paused: v.paused
-                            });
+                        function findVideo(doc) {
+                            if (!doc) return null;
+                            var v = doc.querySelector('video');
+                            if (v) {
+                                return JSON.stringify({
+                                    curr: Math.floor((v.currentTime || 0) * 1000),
+                                    dur: Math.floor((v.duration || 0) * 1000),
+                                    paused: v.paused
+                                });
+                            }
+                            var iframes = doc.querySelectorAll('iframe');
+                            for (var i = 0; i < iframes.length; i++) {
+                                try {
+                                    var res = findVideo(iframes[i].contentDocument || iframes[i].contentWindow.document);
+                                    if (res !== null) return res;
+                                } catch(e) {}
+                            }
+                            return null;
                         }
-                        return null;
+                        return findVideo(document);
                     })();
                     """.trimIndent()
                 ) { rawResult ->
@@ -649,10 +716,8 @@ fun WebStreamPlayer(
                             ViewGroup.LayoutParams.MATCH_PARENT
                         )
                         setBackgroundColor(android.graphics.Color.BLACK)
-                        if (isTvDevice) {
-                            isFocusable = false
-                            isFocusableInTouchMode = false
-                        }
+                        isFocusable = true
+                        isFocusableInTouchMode = true
 
                         settings.apply {
                             javaScriptEnabled = true
@@ -666,7 +731,7 @@ fun WebStreamPlayer(
                             setSupportMultipleWindows(false)
                             javaScriptCanOpenWindowsAutomatically = false
                             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                            userAgentString = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+                            userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
                         }
 
                         webViewClient = object : WebViewClient() {
@@ -679,6 +744,46 @@ fun WebStreamPlayer(
                                 super.onPageFinished(view, url)
                                 isLoading = false
                                 view?.evaluateJavascript(AuraAdBlocker.getAdBlockScript(), null)
+                                view?.evaluateJavascript(
+                                    """
+                                    (function() {
+                                        function triggerPlayInDoc(doc) {
+                                            if (!doc) return false;
+                                            var clicked = false;
+                                            var backdrop = doc.getElementById('backdrop-screen') || doc.querySelector('.playbtnx');
+                                            if (backdrop) { try { backdrop.click(); clicked = true; } catch(e) {} }
+                                            var playBtns = doc.querySelectorAll('button[aria-label*="Play"], [data-play-button], #play-btn, .play-btn, .vjs-big-play-button, .jw-display-icon-container');
+                                            for (var i = 0; i < playBtns.length; i++) {
+                                                try { playBtns[i].click(); clicked = true; } catch(e) {}
+                                            }
+                                            var svgPath = doc.querySelector('path[d^="M21.4086"]');
+                                            if (svgPath) {
+                                                var p = svgPath.closest('div[style*="cursor: pointer"]') || svgPath.parentElement;
+                                                if (p) { try { p.click(); clicked = true; } catch(e) {} }
+                                            }
+                                            var v = doc.querySelector('video');
+                                            if (v && v.paused) {
+                                                try { v.muted = false; v.play().catch(function(){}); clicked = true; } catch(e) {}
+                                            }
+                                            var iframes = doc.querySelectorAll('iframe');
+                                            for (var j = 0; j < iframes.length; j++) {
+                                                try {
+                                                    var childDoc = iframes[j].contentDocument || (iframes[j].contentWindow ? iframes[j].contentWindow.document : null);
+                                                    if (childDoc && triggerPlayInDoc(childDoc)) clicked = true;
+                                                } catch(e) {}
+                                            }
+                                            return clicked;
+                                        }
+                                        var count = 0;
+                                        var interval = setInterval(function() {
+                                            count++;
+                                            triggerPlayInDoc(document);
+                                            if (count >= 10) clearInterval(interval);
+                                        }, 600);
+                                    })();
+                                    """.trimIndent(),
+                                    null
+                                )
                             }
 
                             override fun shouldInterceptRequest(

@@ -151,17 +151,17 @@ class FreeEmbedStreamProvider(
             // Target verified high-speed web embed endpoints with autoplay
             val candidateUrls = if (mediaType == "tv" && seasonNumber != null && episodeNumber != null) {
                 listOf(
-                    "https://vidlink.pro/tv/$tmdbId/$seasonNumber/$episodeNumber?autoplay=true&primaryColor=E50914",
-                    "https://vidsrc.cc/v2/embed/tv/$tmdbId/$seasonNumber/$episodeNumber",
-                    "https://vidsrc.xyz/embed/tv?tmdb=$tmdbId&season=$seasonNumber&episode=$episodeNumber",
-                    "https://autoembed.co/tv/tmdb/$tmdbId-$seasonNumber-$episodeNumber"
+                    "https://vidsrc.pm/embed/tv/$tmdbId/$seasonNumber/$episodeNumber",
+                    "https://player.moviesapi.vip/tv/$tmdbId/$seasonNumber/$episodeNumber",
+                    "https://www.2embed.skin/embed/tv/$tmdbId/$seasonNumber/$episodeNumber",
+                    "https://vidlink.pro/tv/$tmdbId/$seasonNumber/$episodeNumber?autoplay=true&primaryColor=E50914"
                 )
             } else {
                 listOf(
-                    "https://vidlink.pro/movie/$tmdbId?autoplay=true&primaryColor=E50914",
-                    "https://vidsrc.cc/v2/embed/movie/$tmdbId",
-                    "https://vidsrc.xyz/embed/movie?tmdb=$tmdbId",
-                    "https://autoembed.co/movie/tmdb/$tmdbId"
+                    "https://vidsrc.pm/embed/movie/$tmdbId",
+                    "https://player.moviesapi.vip/movie/$tmdbId",
+                    "https://www.2embed.skin/embed/$tmdbId",
+                    "https://vidlink.pro/movie/$tmdbId?autoplay=true&primaryColor=E50914"
                 )
             }
 
@@ -188,11 +188,11 @@ class FreeEmbedStreamProvider(
                 }
             }
 
-            // Reliable default fallback to VidLink autoplay with Aura branding
+            // Reliable default fallback to high-speed VidSrc.pm with zero config
             val fallbackUrl = if (mediaType == "tv" && seasonNumber != null && episodeNumber != null) {
-                "https://vidlink.pro/tv/$tmdbId/$seasonNumber/$episodeNumber?autoplay=true&primaryColor=E50914"
+                "https://vidsrc.pm/embed/tv/$tmdbId/$seasonNumber/$episodeNumber"
             } else {
-                "https://vidlink.pro/movie/$tmdbId?autoplay=true&primaryColor=E50914"
+                "https://vidsrc.pm/embed/movie/$tmdbId"
             }
             Result.success(ResolvedStream(videoUrl = fallbackUrl))
         } catch (e: Exception) {
@@ -372,9 +372,9 @@ class ModularMediaResolver(
 
         // 3. Fallback directly to verified high-speed web stream
         val fallbackUrl = if (mediaType == "tv" && seasonNumber != null && episodeNumber != null) {
-            "https://vidlink.pro/tv/$tmdbId/$seasonNumber/$episodeNumber?autoplay=true&primaryColor=E50914"
+            "https://vidsrc.pm/embed/tv/$tmdbId/$seasonNumber/$episodeNumber"
         } else {
-            "https://vidlink.pro/movie/$tmdbId?autoplay=true&primaryColor=E50914"
+            "https://vidsrc.pm/embed/movie/$tmdbId"
         }
         return Result.success(
             ResolvedStream(
@@ -469,14 +469,16 @@ class ModularMediaResolver(
         // 4. Try Headless Stream Sniffer on verified embed stream providers (AutoEmbed, VidSrc, VidLink)
         val embedCandidates = if (mediaType == "tv" && seasonNumber != null && episodeNumber != null) {
             listOf(
-                "https://autoembed.co/tv/tmdb/$tmdbId-$seasonNumber-$episodeNumber",
-                "https://vidsrc.cc/v2/embed/tv/$tmdbId/$seasonNumber/$episodeNumber",
+                "https://vidsrc.pm/embed/tv/$tmdbId/$seasonNumber/$episodeNumber",
+                "https://player.moviesapi.vip/tv/$tmdbId/$seasonNumber/$episodeNumber",
+                "https://www.2embed.skin/embed/tv/$tmdbId/$seasonNumber/$episodeNumber",
                 "https://vidlink.pro/tv/$tmdbId/$seasonNumber/$episodeNumber?autoplay=true"
             )
         } else {
             listOf(
-                "https://autoembed.co/movie/tmdb/$tmdbId",
-                "https://vidsrc.cc/v2/embed/movie/$tmdbId",
+                "https://vidsrc.pm/embed/movie/$tmdbId",
+                "https://player.moviesapi.vip/movie/$tmdbId",
+                "https://www.2embed.skin/embed/$tmdbId",
                 "https://vidlink.pro/movie/$tmdbId?autoplay=true"
             )
         }
