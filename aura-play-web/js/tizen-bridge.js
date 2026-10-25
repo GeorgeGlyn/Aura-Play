@@ -3,10 +3,10 @@ const TizenBridge = {
     isTizen: false,
 
     init() {
-        if (typeof window.tizen !== "undefined") {
+        if (typeof window.tizen !== "undefined" || window.location.search.includes("tv=1")) {
             this.isTizen = true;
             document.body.classList.add("tizen-tv");
-            console.log("[TizenBridge] Running on Samsung Tizen TV OS");
+            console.log("[TizenBridge] Running on Samsung Tizen TV OS (or TV simulation mode)");
             this.registerTvKeys();
         } else {
             console.log("[TizenBridge] Running in standard Web / Browser environment");
