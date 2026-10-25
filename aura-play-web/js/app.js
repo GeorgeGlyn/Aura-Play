@@ -297,9 +297,23 @@ const App = {
             seasonsSection.classList.add("hidden");
         }
 
-        // Setup Play button
+        // Setup Play button with stream availability verification
         const playBtn = document.getElementById("modal-play-btn");
-        playBtn.onclick = () => window.Player.play(fullMedia);
+        const isAvailable = (typeof TMDB.isMediaAvailable === "function") 
+            ? TMDB.isMediaAvailable(fullMedia) 
+            : true;
+
+        if (!isAvailable) {
+            playBtn.innerHTML = `<span>⏳ Not Yet Released on OTT</span>`;
+            playBtn.onclick = () => {
+                if (window.Player && typeof window.Player.showToast === "function") {
+                    window.Player.showToast("This title has not been released on digital streaming yet.");
+                }
+            };
+        } else {
+            playBtn.innerHTML = `<span>▶ Play</span>`;
+            playBtn.onclick = () => window.Player.play(fullMedia);
+        }
 
         // Setup Download button (for movies; episodes get their own per-row button)
         const dlBtn = document.getElementById("modal-download-btn");
@@ -430,7 +444,7 @@ const App = {
         const results = await TMDB.search(query);
 
         if (results.length === 0) {
-            resultsGrid.innerHTML = `<p class="search-hint">No titles found matching "${query}".</p>`;
+            resultsGrid.innerHTML = `<p class="search-hint">No streamable titles found matching "${query}". Only fully released movies and TV series are shown.</p>`;
             return;
         }
 
