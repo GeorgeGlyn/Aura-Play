@@ -19,6 +19,7 @@ const Player = {
 
     // Audio & Subtitles State
     isAudioSubModalOpen: false,
+    currentAudioTrack: localStorage.getItem("aura_audio") || "original",
     currentSubtitle: "off",
     subtitleOffset: 0.0,
     subtitleCues: [],
@@ -40,6 +41,7 @@ const Player = {
         this.qualityBtnEl = document.getElementById("player-quality-btn");
 
         this.updateQualityDisplay();
+        this.updateAudioTrackDisplay();
 
         // Activity monitor to auto-hide HUD
         window.addEventListener("mousemove", () => {
@@ -293,6 +295,58 @@ const Player = {
             }
             if (statusEl) {
                 statusEl.textContent = isActive ? "Active" : "";
+            }
+        });
+        this.updateAudioTrackDisplay();
+    },
+
+    getAudioTrackDisplayName(key) {
+        switch (key) {
+            case "ta": return "Tamil (தமிழ்)";
+            case "hi": return "Hindi (हिंदी Dub)";
+            case "te": return "Telugu (తెలుగు Dub)";
+            case "ml": return "Malayalam (മലയാളം Dub)";
+            case "kn": return "Kannada (ಕನ್ನಡ Dub)";
+            case "en": return "English";
+            case "original":
+            default:
+                return "Original Audio (5.1 / Atmos)";
+        }
+    },
+
+    selectAudioTrack(trackKey) {
+        this.currentAudioTrack = trackKey;
+        try {
+            localStorage.setItem("aura_audio", trackKey);
+        } catch (e) {}
+
+        this.updateAudioTrackDisplay();
+        const displayName = this.getAudioTrackDisplayName(trackKey);
+        this.showToast(`🔊 Audio: ${displayName}`);
+
+        // If user picked a dubbed track and currently on Server 1,
+        // switch to Server 2 (VidLink Pro) which provides multi-audio dub streams
+        if (trackKey !== "original" && this.currentServer === "vidsrc_pm") {
+            this.switchServer("vidlink");
+            this.showToast(`Switched to Server 2 (VidLink Pro) for ${displayName}`);
+        } else if (this.currentServer === "vidlink") {
+            const frame = document.getElementById("player-frame");
+            if (frame && frame.contentWindow) {
+                try {
+                    frame.contentWindow.postMessage({ action: "setAudioTrack", audio: trackKey }, "*");
+                    frame.contentWindow.postMessage({ type: "CHANGE_AUDIO", language: trackKey }, "*");
+                } catch (e) {}
+            }
+        }
+    },
+
+    updateAudioTrackDisplay() {
+        const buttons = document.querySelectorAll(".audio-lang-btn");
+        buttons.forEach(btn => {
+            if (btn.getAttribute("data-audio") === this.currentAudioTrack) {
+                btn.classList.add("active");
+            } else {
+                btn.classList.remove("active");
             }
         });
     },
@@ -551,7 +605,7 @@ const Player = {
         } else if (tabName === "audio") {
             if (audioTab) audioTab.classList.add("active");
             if (audioContent) audioContent.classList.remove("hidden");
-            const activeCard = document.querySelector(".audio-server-card.active") || audioTab;
+            const activeCard = document.querySelector(".audio-lang-btn.active") || document.querySelector(".audio-server-card.active") || audioTab;
             if (activeCard && window.Navigation) {
                 window.Navigation.setFocus(activeCard);
             }

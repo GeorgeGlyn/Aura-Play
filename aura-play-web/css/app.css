@@ -951,6 +951,62 @@ body {
     text-align: center;
 }
 
+.audio-lang-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.audio-lang-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 12px 18px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    color: #fff;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.audio-lang-btn .audio-lang-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 3px;
+}
+
+.audio-lang-btn .audio-lang-desc {
+    font-size: 12px;
+    font-weight: 500;
+    color: #aaa;
+}
+
+.audio-lang-btn.active {
+    background: rgba(229, 9, 20, 0.25) !important;
+    border-color: #E50914 !important;
+}
+
+.audio-lang-btn.active .audio-lang-title {
+    color: #ff4d58;
+}
+
+.audio-lang-btn.focused {
+    background: #E50914 !important;
+    border-color: #fff !important;
+    transform: scale(1.04);
+    outline: 2px solid #fff;
+    box-shadow: 0 0 20px rgba(229, 9, 20, 0.9);
+}
+
+.audio-lang-btn.focused .audio-lang-title,
+.audio-lang-btn.focused .audio-lang-desc {
+    color: #fff !important;
+}
+
 .audio-server-list {
     display: flex;
     flex-direction: column;

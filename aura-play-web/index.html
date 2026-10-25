@@ -247,7 +247,39 @@
 
                 <!-- Audio & Servers Tab Content -->
                 <div class="audio-sub-body hidden" id="audio-tab-content">
-                    <div class="sub-section-title">Select Audio Stream / Server</div>
+                    <div class="sub-section-title">Select Audio Language &amp; Dub Track</div>
+                    <div class="audio-lang-grid" id="audio-lang-grid">
+                        <button class="audio-lang-btn active focusable" tabindex="0" data-audio="original" onclick="Player.selectAudioTrack('original')">
+                            <span class="audio-lang-title">Original Audio</span>
+                            <span class="audio-lang-desc">Master 5.1 / Atmos</span>
+                        </button>
+                        <button class="audio-lang-btn focusable" tabindex="0" data-audio="ta" onclick="Player.selectAudioTrack('ta')">
+                            <span class="audio-lang-title">Tamil (தமிழ்)</span>
+                            <span class="audio-lang-desc">Original / Dub</span>
+                        </button>
+                        <button class="audio-lang-btn focusable" tabindex="0" data-audio="hi" onclick="Player.selectAudioTrack('hi')">
+                            <span class="audio-lang-title">Hindi (हिंदी)</span>
+                            <span class="audio-lang-desc">Multi-Audio Dub</span>
+                        </button>
+                        <button class="audio-lang-btn focusable" tabindex="0" data-audio="te" onclick="Player.selectAudioTrack('te')">
+                            <span class="audio-lang-title">Telugu (తెలుగు)</span>
+                            <span class="audio-lang-desc">Multi-Audio Dub</span>
+                        </button>
+                        <button class="audio-lang-btn focusable" tabindex="0" data-audio="ml" onclick="Player.selectAudioTrack('ml')">
+                            <span class="audio-lang-title">Malayalam (മലയാളം)</span>
+                            <span class="audio-lang-desc">Multi-Audio Dub</span>
+                        </button>
+                        <button class="audio-lang-btn focusable" tabindex="0" data-audio="kn" onclick="Player.selectAudioTrack('kn')">
+                            <span class="audio-lang-title">Kannada (ಕನ್ನಡ)</span>
+                            <span class="audio-lang-desc">Multi-Audio Dub</span>
+                        </button>
+                        <button class="audio-lang-btn focusable" tabindex="0" data-audio="en" onclick="Player.selectAudioTrack('en')">
+                            <span class="audio-lang-title">English</span>
+                            <span class="audio-lang-desc">Original / Dub</span>
+                        </button>
+                    </div>
+
+                    <div class="sub-section-title" style="margin-top: 24px;">Streaming Server &amp; Multi-Audio Engine</div>
                     <div class="audio-server-list">
                         <div class="audio-server-card focusable" id="audio-card-vidsrcpm" tabindex="0" onclick="Player.switchServer('vidsrc_pm'); Player.closeAudioSubModal();">
                             <div class="audio-card-left">

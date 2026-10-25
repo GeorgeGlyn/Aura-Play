@@ -507,6 +507,25 @@ body.tizen-tv .timing-val {
     font-size: 20px;
 }
 
+body.tizen-tv .audio-lang-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+body.tizen-tv .audio-lang-btn {
+    padding: 16px 20px;
+}
+
+body.tizen-tv .audio-lang-title {
+    font-size: 19px;
+    margin-bottom: 4px;
+}
+
+body.tizen-tv .audio-lang-desc {
+    font-size: 14px;
+}
+
 body.tizen-tv .audio-card-badge {
     font-size: 15px;
     padding: 6px 14px;
