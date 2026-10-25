@@ -147,12 +147,17 @@
     <!-- Fullscreen Cinema Player -->
     <div class="player-container hidden" id="player-container">
         <iframe id="player-frame" 
-                class="player-frame focusable" 
-                tabindex="0"
+                class="player-frame" 
+                tabindex="-1"
                 referrerpolicy="origin"
                 allow="autoplay *; fullscreen *; encrypted-media *; picture-in-picture *; popups 'none'" 
                 allowfullscreen>
         </iframe>
+
+        <!-- Sleek On-Screen Remote Action Toast (Play, Pause, +/-10s Seek Indicator) -->
+        <div class="player-toast hidden" id="player-toast">
+            <span class="player-toast-text" id="player-toast-text"></span>
+        </div>
         
         <!-- Top HUD -->
         <div class="player-hud" id="player-hud">
@@ -170,7 +175,6 @@
                 <button class="server-btn focusable" tabindex="0" id="server-btn-vidlink" onclick="Player.switchServer('vidlink')">Server 4</button>
             </div>
         </div>
-
     </div>
 
     <!-- Application Logic Scripts -->

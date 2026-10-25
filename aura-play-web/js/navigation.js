@@ -103,47 +103,65 @@ const Navigation = {
                 (this.currentFocus.id === "player-back-btn" || this.currentFocus.classList.contains("server-btn"));
 
             if (keyCode === 13 || keyCode === 32) { // OK / Enter / Space
+                e.preventDefault();
                 if (isTopHudFocused) {
-                    e.preventDefault();
                     this.currentFocus.click();
                     return;
                 }
-                e.preventDefault();
                 window.Player.togglePlayPause();
                 return;
             }
 
             if (keyCode === 38) { // Up -> Reveal Top HUD & Focus Back button
+                e.preventDefault();
                 if (!isTopHudFocused) {
-                    e.preventDefault();
                     window.Player.showHudTemporarily();
                     const backBtn = document.getElementById("player-back-btn");
                     if (backBtn) this.setFocus(backBtn);
-                    return;
                 }
-            } else if (keyCode === 40) { // Down -> Move focus back into Video Player
+                return;
+            } else if (keyCode === 40) { // Down -> Hide Top HUD, return to clean video viewing
+                e.preventDefault();
                 if (isTopHudFocused) {
-                    e.preventDefault();
-                    if (this.currentFocus) {
-                        this.currentFocus.classList.remove("focused");
-                        this.currentFocus.blur();
+                    window.Player.hideHud();
+                }
+                return;
+            } else if (keyCode === 37) { // Left -> Seek -10s or navigate Top HUD
+                e.preventDefault();
+                if (isTopHudFocused) {
+                    const hudButtons = [
+                        document.getElementById("player-back-btn"),
+                        document.getElementById("server-btn-vidsrcpm"),
+                        document.getElementById("server-btn-moviesapi"),
+                        document.getElementById("server-btn-twoembed"),
+                        document.getElementById("server-btn-vidlink")
+                    ].filter(Boolean);
+                    const idx = hudButtons.indexOf(this.currentFocus);
+                    if (idx > 0) {
+                        this.setFocus(hudButtons[idx - 1]);
                     }
-                    this.currentFocus = null;
-                    window.Player.focusVideoFrame();
-                    return;
-                }
-            } else if (keyCode === 37) { // Left -> Seek -10s if watching video
-                if (!isTopHudFocused) {
-                    e.preventDefault();
+                } else {
                     window.Player.seek(-10);
-                    return;
                 }
-            } else if (keyCode === 39) { // Right -> Seek +10s if watching video
-                if (!isTopHudFocused) {
-                    e.preventDefault();
+                return;
+            } else if (keyCode === 39) { // Right -> Seek +10s or navigate Top HUD
+                e.preventDefault();
+                if (isTopHudFocused) {
+                    const hudButtons = [
+                        document.getElementById("player-back-btn"),
+                        document.getElementById("server-btn-vidsrcpm"),
+                        document.getElementById("server-btn-moviesapi"),
+                        document.getElementById("server-btn-twoembed"),
+                        document.getElementById("server-btn-vidlink")
+                    ].filter(Boolean);
+                    const idx = hudButtons.indexOf(this.currentFocus);
+                    if (idx >= 0 && idx < hudButtons.length - 1) {
+                        this.setFocus(hudButtons[idx + 1]);
+                    }
+                } else {
                     window.Player.seek(10);
-                    return;
                 }
+                return;
             }
         }
 

@@ -1,12 +1,16 @@
 // Aura Play - Cinema Streaming Player
 const Player = {
     isOpen: false,
+    isPaused: false,
     currentMedia: null,
     currentServer: "vidsrc_pm",
     hideTimeout: null,
+    toastTimeout: null,
     initialStartTime: 0,
     playStartTime: 0,
     progressInterval: null,
+    currentTime: 0,
+    duration: 0,
     lastSavedPos: 0,
 
     init() {
@@ -15,29 +19,43 @@ const Player = {
         this.titleEl = document.getElementById("player-title");
         this.subtitleEl = document.getElementById("player-subtitle");
         this.hud = document.getElementById("player-hud");
+        this.toastEl = document.getElementById("player-toast");
+        this.toastTextEl = document.getElementById("player-toast-text");
 
         // Activity monitor to auto-hide HUD
         window.addEventListener("mousemove", () => {
-            this.showHudTemporarily();
-        });
-        window.addEventListener("keydown", () => {
             if (this.isOpen) {
                 this.showHudTemporarily();
             }
         });
 
-        // Listen for postMessage from embed stream players for exact timestamp sync
+        // Listen for postMessage from embed stream players (vidsrc.pm, vidlink, etc.)
         window.addEventListener("message", (ev) => {
             if (!this.isOpen || !ev.data) return;
             try {
                 const data = typeof ev.data === "string" ? JSON.parse(ev.data) : ev.data;
-                if (data && (typeof data.currentTime === "number" || typeof data.time === "number")) {
-                    const time = data.currentTime || data.time;
-                    if (time > 0) {
-                        this.initialStartTime = time;
+                if (!data) return;
+
+                // Handle vidsrc.pm & vidlink stream events
+                if (data.event === "timeupdate" || typeof data.currentTime === "number" || typeof data.time === "number") {
+                    const time = (typeof data.currentTime === "number") ? data.currentTime : data.time;
+                    if (typeof time === "number" && time >= 0) {
+                        this.currentTime = Math.floor(time);
+                        this.initialStartTime = this.currentTime;
                         this.playStartTime = Date.now();
-                        this.recordProgress();
                     }
+                    if (typeof data.duration === "number" && data.duration > 0) {
+                        this.duration = Math.floor(data.duration);
+                    }
+                    this.recordProgress();
+                }
+
+                if (data.event === "play") {
+                    this.isPaused = false;
+                } else if (data.event === "pause") {
+                    this.isPaused = true;
+                } else if (data.event === "seeked" && typeof data.currentTime === "number") {
+                    this.currentTime = Math.floor(data.currentTime);
                 }
             } catch (e) {}
         });
@@ -46,6 +64,7 @@ const Player = {
     play(media, season = null, episode = null, startTime = null) {
         this.currentMedia = Object.assign({}, media, { season: season, episode: episode });
         this.isOpen = true;
+        this.isPaused = false;
 
         // Check if there is an existing continue watching progress
         const saved = (window.App && typeof window.App.getContinueWatchingItem === "function")
@@ -53,8 +72,10 @@ const Player = {
             : null;
 
         this.initialStartTime = (typeof startTime === "number") ? startTime : (saved ? (saved.position || 0) : 0);
+        this.currentTime = this.initialStartTime;
         this.playStartTime = Date.now();
         this.lastSavedPos = this.initialStartTime;
+        this.duration = (media && media.runtime) ? (media.runtime * 60) : 5400;
 
         if (window.TizenBridge) {
             window.TizenBridge.preventScreenSaver(true);
@@ -63,15 +84,17 @@ const Player = {
         // Setup titles
         const isTv = media.media_type === "tv" || !!season;
         const mainTitle = media.title || media.name || "Now Playing";
-        this.titleEl.textContent = mainTitle;
+        if (this.titleEl) this.titleEl.textContent = mainTitle;
 
-        if (isTv && season && episode) {
-            this.subtitleEl.textContent = `Season ${season} • Episode ${episode}`;
-        } else if (media.release_date || media.first_air_date) {
-            const year = (media.release_date || media.first_air_date || "").substring(0, 4);
-            this.subtitleEl.textContent = `${year} • 4K Ultra HD • ATMOS`;
-        } else {
-            this.subtitleEl.textContent = "Cinema HD Stream";
+        if (this.subtitleEl) {
+            if (isTv && season && episode) {
+                this.subtitleEl.textContent = `Season ${season} • Episode ${episode}`;
+            } else if (media.release_date || media.first_air_date) {
+                const year = (media.release_date || media.first_air_date || "").substring(0, 4);
+                this.subtitleEl.textContent = `${year} • 4K Ultra HD • ATMOS`;
+            } else {
+                this.subtitleEl.textContent = "Cinema HD Stream";
+            }
         }
 
         this.updateServerButtons();
@@ -85,26 +108,30 @@ const Player = {
             this.recordProgress();
         }, 3000);
 
-        // Clear navigation focus from background buttons and focus video frame
+        // Clear navigation focus so parent window retains full TV remote control
         if (window.Navigation && window.Navigation.currentFocus) {
             window.Navigation.currentFocus.classList.remove("focused");
             window.Navigation.currentFocus.blur();
             window.Navigation.currentFocus = null;
         }
 
-        setTimeout(() => {
-            this.focusVideoFrame();
-        }, 300);
+        // Ensure parent container has focus to capture all TV remote keys
+        if (this.container) {
+            this.container.focus();
+        }
 
         this.showHudTemporarily();
     },
 
     recordProgress() {
         if (!this.isOpen || !this.currentMedia) return;
-        const elapsed = Math.floor((Date.now() - this.playStartTime) / 1000) + (this.initialStartTime || 0);
+        const elapsed = this.currentTime > 0 
+            ? this.currentTime 
+            : Math.floor((Date.now() - this.playStartTime) / 1000) + (this.initialStartTime || 0);
+
         if (elapsed < 5) return;
         this.lastSavedPos = elapsed;
-        const dur = (this.currentMedia && this.currentMedia.runtime) ? (this.currentMedia.runtime * 60) : 5400;
+        const dur = this.duration || ((this.currentMedia && this.currentMedia.runtime) ? (this.currentMedia.runtime * 60) : 5400);
 
         if (window.App && typeof window.App.updateContinueWatching === "function") {
             const isNearEnd = elapsed >= (dur - 30);
@@ -156,37 +183,47 @@ const Player = {
             case "vidsrc_pm":
             default:
                 url = isTv 
-                    ? `https://vidsrc.pm/embed/tv/${id}/${s}/${e}`
-                    : `https://vidsrc.pm/embed/movie/${id}`;
+                    ? `https://vidsrc.pm/embed/tv/${id}/${s}/${e}?autoplay=1${timeParam}`
+                    : `https://vidsrc.pm/embed/movie/${id}?autoplay=1${timeParam}`;
                 break;
         }
 
         console.log(`[Player] Loading stream (${this.currentServer}): ${url} (startAt: ${startSec}s)`);
         this.frame.removeAttribute("sandbox");
         this.frame.src = url;
+        this.isPaused = false;
 
-        // Auto-play attempt: poll nested iframes for play button and start video
-        if (this.autoPlayInterval) clearInterval(this.autoPlayInterval);
-        let attempts = 0;
-        this.autoPlayInterval = setInterval(() => {
-            attempts++;
-            if (!this.isOpen || attempts > 15) {
-                clearInterval(this.autoPlayInterval);
-                return;
+        // Perform a single gentle autoplay assistance after 1.2s - NEVER loop or click repeatedly!
+        setTimeout(() => {
+            if (this.isOpen) {
+                this.triggerInitialPlay();
             }
-            this.triggerDeepPlay();
-        }, 800);
+        }, 1200);
     },
 
     switchServer(serverKey) {
         // Carry forward elapsed time when switching servers
-        const elapsed = Math.floor((Date.now() - this.playStartTime) / 1000) + (this.initialStartTime || 0);
+        const elapsed = this.currentTime > 0
+            ? this.currentTime
+            : Math.floor((Date.now() - this.playStartTime) / 1000) + (this.initialStartTime || 0);
         this.initialStartTime = elapsed;
+        this.currentTime = elapsed;
         this.playStartTime = Date.now();
         this.currentServer = serverKey;
         this.updateServerButtons();
         this.loadStreamUrl();
+        this.showToast(`Switched to ${this.getServerDisplayName(serverKey)}`);
         this.showHudTemporarily();
+    },
+
+    getServerDisplayName(key) {
+        switch (key) {
+            case "vidsrc_pm": return "Server 1 (VidSrc)";
+            case "moviesapi": return "Server 2 (MoviesAPI)";
+            case "twoembed": return "Server 3 (2Embed)";
+            case "vidlink": return "Server 4 (VidLink)";
+            default: return "Server";
+        }
     },
 
     updateServerButtons() {
@@ -208,209 +245,158 @@ const Player = {
         }
     },
 
-    triggerDeepPlay(targetDoc) {
+    triggerInitialPlay() {
         const frame = document.getElementById("player-frame");
-        if (!frame) return false;
-        const rootDoc = targetDoc || frame.contentDocument || (frame.contentWindow ? frame.contentWindow.document : null);
-        if (!rootDoc) return false;
+        if (!frame) return;
 
-        function walk(doc) {
-            if (!doc) return false;
-            let played = false;
+        // 1. Send dedicated postMessage to embed player (vidsrc.pm & vidlink)
+        if (frame.contentWindow) {
+            try {
+                frame.contentWindow.postMessage({ action: "play" }, "*");
+                frame.contentWindow.postMessage({ type: "MEDIA_PLAY" }, "*");
+            } catch (e) {}
+        }
+
+        // 2. If direct DOM is accessible, ensure video is playing and remove clickjack overlays
+        try {
+            const rootDoc = frame.contentDocument;
+            if (!rootDoc) return;
 
             // Remove transparent / invisible clickjacking overlays
-            try {
-                const overlays = doc.querySelectorAll('div, a');
-                for (let i = 0; i < overlays.length; i++) {
-                    const el = overlays[i];
-                    const s = doc.defaultView ? doc.defaultView.getComputedStyle(el) : el.style;
-                    if (s && (s.position === 'fixed' || s.position === 'absolute')) {
-                        const z = parseInt(s.zIndex, 10);
-                        if (z >= 99 && !el.querySelector('video') && !el.querySelector('svg')) {
-                            const op = parseFloat(s.opacity);
-                            if (op < 0.05 || s.backgroundColor === 'transparent') {
-                                el.remove();
-                            }
+            const overlays = rootDoc.querySelectorAll("div, a");
+            for (let i = 0; i < overlays.length; i++) {
+                const el = overlays[i];
+                const s = rootDoc.defaultView ? rootDoc.defaultView.getComputedStyle(el) : el.style;
+                if (s && (s.position === "fixed" || s.position === "absolute")) {
+                    const z = parseInt(s.zIndex, 10);
+                    if (z >= 99 && !el.querySelector("video") && !el.querySelector("svg")) {
+                        const op = parseFloat(s.opacity);
+                        if (op < 0.05 || s.backgroundColor === "transparent") {
+                            el.remove();
                         }
                     }
                 }
-            } catch(e) {}
+            }
 
-            // 1. Click backdrop wrapper or 2embed play container
-            const backdrop = doc.getElementById("backdrop-screen") || doc.querySelector(".playbtnx");
+            // Click backdrop wrapper if present (e.g. 2embed)
+            const backdrop = rootDoc.getElementById("backdrop-screen") || rootDoc.querySelector(".playbtnx");
             if (backdrop) {
-                try { backdrop.click(); played = true; } catch(e) {}
+                try { backdrop.click(); } catch (e) {}
             }
 
-            // 2. Click play button elements
-            const playBtns = doc.querySelectorAll('button[aria-label*="Play"], [data-play-button], #play-btn, .play-btn, .vjs-big-play-button, .vjs-play-control, .jw-display-icon-container');
-            for (let i = 0; i < playBtns.length; i++) {
-                try { playBtns[i].click(); played = true; } catch(e) {}
+            // Only trigger play if video is actually paused; NEVER click repeatedly!
+            const v = rootDoc.querySelector("video");
+            if (v && v.paused) {
+                v.muted = false;
+                v.play().catch(() => {});
             }
-
-            // 3. Click play SVG icons
-            const svgPath = doc.querySelector('path[d^="M21.4086"]');
-            if (svgPath) {
-                const parent = svgPath.closest('div[style*="cursor: pointer"]') || svgPath.parentElement;
-                if (parent) {
-                    try { parent.click(); played = true; } catch(e) {}
-                }
-            }
-
-            // 4. Trigger HTML5 video element directly
-            const videos = doc.querySelectorAll('video');
-            for (let i = 0; i < videos.length; i++) {
-                const v = videos[i];
-                if (v && v.paused) {
-                    try {
-                        v.muted = false;
-                        v.play().catch(() => {});
-                        played = true;
-                    } catch(e) {}
-                }
-            }
-
-            // 5. Recurse into child iframes
-            const iframes = doc.querySelectorAll('iframe');
-            for (let i = 0; i < iframes.length; i++) {
-                try {
-                    const childDoc = iframes[i].contentDocument || (iframes[i].contentWindow ? iframes[i].contentWindow.document : null);
-                    if (childDoc && walk(childDoc)) {
-                        played = true;
-                    }
-                } catch(e) {}
-            }
-
-            return played;
-        }
-
-        try {
-            return walk(rootDoc);
-        } catch(e) {
-            return false;
-        }
+        } catch (e) {}
     },
 
     togglePlayPause() {
-        this.showHudTemporarily();
         const frame = document.getElementById("player-frame");
         if (!frame) return;
 
-        let toggled = false;
-        try {
-            const rootDoc = frame.contentDocument || (frame.contentWindow ? frame.contentWindow.document : null);
-            function toggleInDoc(doc) {
-                if (!doc) return null;
-                const v = doc.querySelector('video');
-                if (v) {
-                    if (v.paused) {
-                        v.muted = false;
-                        v.play().catch(() => {});
-                        return "playing";
-                    } else {
-                        v.pause();
-                        return "paused";
-                    }
-                }
-                const iframes = doc.querySelectorAll('iframe');
-                for (let i = 0; i < iframes.length; i++) {
-                    try {
-                        const c = iframes[i].contentDocument || (iframes[i].contentWindow ? iframes[i].contentWindow.document : null);
-                        const res = toggleInDoc(c);
-                        if (res !== null) return res;
-                    } catch(e) {}
-                }
-                return null;
-            }
-            if (rootDoc) {
-                const res = toggleInDoc(rootDoc);
-                if (res !== null) toggled = true;
-            }
-        } catch(e) {}
+        this.isPaused = !this.isPaused;
 
-        // Fallback for cross-origin iframes
-        if (!toggled && frame.contentWindow) {
-            try {
-                frame.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
-                frame.contentWindow.postMessage({ type: 'pause' }, '*');
-                frame.contentWindow.postMessage({ type: 'play' }, '*');
-                const keyEvt = new KeyboardEvent('keydown', { key: ' ', code: 'Space', keyCode: 32, bubbles: true });
-                frame.contentWindow.dispatchEvent(keyEvt);
-            } catch(e) {}
-        }
-    },
-
-    interactStream() {
-        this.togglePlayPause();
-    },
-
-    focusVideoFrame() {
-        const frame = document.getElementById("player-frame");
-        if (frame) {
-            frame.focus();
-            function focusInnermost(f) {
-                if (!f) return;
-                try {
-                    f.focus();
-                    if (f.contentWindow) f.contentWindow.focus();
-                    const doc = f.contentDocument || (f.contentWindow ? f.contentWindow.document : null);
-                    if (doc) {
-                        const childIframe = doc.querySelector('iframe');
-                        if (childIframe) focusInnermost(childIframe);
-                    }
-                } catch(e) {}
-            }
-            focusInnermost(frame);
-        }
-    },
-
-    seek(seconds) {
-        this.showHudTemporarily();
-        const frame = document.getElementById("player-frame");
-        if (!frame) return;
-
-        // 1. Try deep seek in accessible video elements
-        try {
-            const rootDoc = frame.contentDocument || (frame.contentWindow ? frame.contentWindow.document : null);
-            function seekInDoc(doc) {
-                if (!doc) return false;
-                const v = doc.querySelector('video');
-                if (v) {
-                    v.currentTime = Math.max(0, Math.min(v.duration || 999999, v.currentTime + seconds));
-                    return true;
-                }
-                const iframes = doc.querySelectorAll('iframe');
-                for (let i = 0; i < iframes.length; i++) {
-                    try {
-                        const c = iframes[i].contentDocument || (iframes[i].contentWindow ? iframes[i].contentWindow.document : null);
-                        if (c && seekInDoc(c)) return true;
-                    } catch(e) {}
-                }
-                return false;
-            }
-            if (rootDoc) seekInDoc(rootDoc);
-        } catch(e) {}
-
-        // 2. Dispatch cross-origin seek message
+        // 1. Send dedicated postMessage to vidsrc.pm & vidlink
         if (frame.contentWindow) {
             try {
-                frame.contentWindow.postMessage({ type: 'seek', offset: seconds }, '*');
+                frame.contentWindow.postMessage({ action: this.isPaused ? "pause" : "play" }, "*");
+                frame.contentWindow.postMessage({ action: "togglePlay" }, "*");
+                frame.contentWindow.postMessage({ type: this.isPaused ? "MEDIA_PAUSE" : "MEDIA_PLAY" }, "*");
             } catch (e) {}
         }
+
+        // 2. Direct DOM fallback if accessible
+        try {
+            const rootDoc = frame.contentDocument;
+            if (rootDoc) {
+                const v = rootDoc.querySelector("video");
+                if (v) {
+                    if (this.isPaused) {
+                        v.pause();
+                    } else {
+                        v.play().catch(() => {});
+                    }
+                }
+            }
+        } catch (e) {}
+
+        // 3. Show sleek TV on-screen toast
+        this.showToast(this.isPaused ? "⏸ Paused" : "▶ Playing");
     },
 
-    reloadStream() {
-        this.loadStreamUrl();
-        this.showHudTemporarily();
-        setTimeout(() => {
-            this.focusVideoFrame();
-        }, 300);
+    seek(deltaSeconds) {
+        const frame = document.getElementById("player-frame");
+        if (!frame) return;
+
+        const currentPos = (typeof this.currentTime === "number" && this.currentTime > 0)
+            ? this.currentTime
+            : Math.floor((Date.now() - this.playStartTime) / 1000) + (this.initialStartTime || 0);
+
+        const target = Math.max(0, currentPos + deltaSeconds);
+        this.currentTime = target;
+        this.initialStartTime = target;
+        this.playStartTime = Date.now();
+
+        // 1. Send dedicated postMessage to vidsrc.pm & vidlink
+        if (frame.contentWindow) {
+            try {
+                frame.contentWindow.postMessage({ action: "seek", time: target }, "*");
+                frame.contentWindow.postMessage({ type: "MEDIA_SEEK", time: target }, "*");
+            } catch (e) {}
+        }
+
+        // 2. Direct DOM fallback if accessible
+        try {
+            const rootDoc = frame.contentDocument;
+            if (rootDoc) {
+                const v = rootDoc.querySelector("video");
+                if (v) {
+                    v.currentTime = target;
+                }
+            }
+        } catch (e) {}
+
+        // 3. Format timestamp and display TV toast
+        const formatTime = (s) => {
+            const h = Math.floor(s / 3600);
+            const m = Math.floor((s % 3600) / 60);
+            const sec = Math.floor(s % 60);
+            if (h > 0) {
+                return `${h}:${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+            }
+            return `${m}:${sec.toString().padStart(2, '0')}`;
+        };
+
+        const prefix = deltaSeconds > 0 ? "⏩ +" : "⏪ -";
+        this.showToast(`${prefix}${Math.abs(deltaSeconds)}s  (${formatTime(target)})`);
+    },
+
+    showToast(text) {
+        if (!this.toastEl || !this.toastTextEl) return;
+        this.toastTextEl.textContent = text;
+        this.toastEl.classList.remove("hidden");
+        // Force reflow for CSS transition
+        void this.toastEl.offsetWidth;
+        this.toastEl.classList.add("active");
+
+        clearTimeout(this.toastTimeout);
+        this.toastTimeout = setTimeout(() => {
+            if (this.toastEl) {
+                this.toastEl.classList.remove("active");
+                setTimeout(() => {
+                    if (this.toastEl && !this.toastEl.classList.contains("active")) {
+                        this.toastEl.classList.add("hidden");
+                    }
+                }, 250);
+            }
+        }, 1400);
     },
 
     showHudTemporarily() {
-        if (!this.isOpen) {
-            return;
-        }
+        if (!this.isOpen) return;
         if (this.hud) {
             this.hud.classList.remove("fade-out");
             this.hud.classList.add("fade-in");
@@ -419,22 +405,44 @@ const Player = {
         clearTimeout(this.hideTimeout);
         this.hideTimeout = setTimeout(() => {
             if (this.isOpen) {
-                if (this.hud) {
-                    this.hud.classList.remove("fade-in");
-                    this.hud.classList.add("fade-out");
-                }
+                this.hideHud();
             }
         }, 3500);
+    },
+
+    hideHud() {
+        if (this.hud) {
+            this.hud.classList.remove("fade-in");
+            this.hud.classList.add("fade-out");
+        }
+        // Remove focus styling from top HUD buttons if unfocused
+        const isHudFocused = window.Navigation && window.Navigation.currentFocus &&
+            (window.Navigation.currentFocus.id === "player-back-btn" || window.Navigation.currentFocus.classList.contains("server-btn"));
+        if (isHudFocused && window.Navigation) {
+            window.Navigation.currentFocus.classList.remove("focused");
+            window.Navigation.currentFocus.blur();
+            window.Navigation.currentFocus = null;
+        }
     },
 
     close() {
         this.isOpen = false;
         clearTimeout(this.hideTimeout);
+        clearTimeout(this.toastTimeout);
         clearInterval(this.progressInterval);
         this.recordProgress();
-        this.frame.src = "about:blank";
-        this.container.classList.remove("active");
-        this.container.classList.add("hidden");
+
+        if (this.frame) {
+            this.frame.src = "about:blank";
+        }
+        if (this.container) {
+            this.container.classList.remove("active");
+            this.container.classList.add("hidden");
+        }
+        if (this.toastEl) {
+            this.toastEl.classList.remove("active");
+            this.toastEl.classList.add("hidden");
+        }
 
         if (window.TizenBridge) {
             window.TizenBridge.preventScreenSaver(false);
@@ -445,7 +453,7 @@ const Player = {
             window.App.renderContinueWatchingRow();
         }
 
-        // Return focus to Details Modal or Last focused element
+        // Return focus to Details Modal or last focused element
         if (window.App && window.App.isModalOpen) {
             const playBtn = document.getElementById("modal-play-btn");
             if (playBtn && window.Navigation) {

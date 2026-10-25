@@ -424,6 +424,14 @@ body.tizen-tv .server-btn.focused {
     box-shadow: 0 0 25px rgba(229, 9, 20, 0.95) !important;
 }
 
+body.tizen-tv .player-toast {
+    font-size: 30px;
+    padding: 24px 52px;
+    border-radius: 50px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    box-shadow: 0 16px 60px rgba(0, 0, 0, 0.95);
+}
+
 /* Native Offline Player Controls Focus */
 .native-ctrl-btn.focused {
     transform: scale(1.2) !important;
