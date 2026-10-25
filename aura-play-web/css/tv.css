@@ -432,6 +432,73 @@ body.tizen-tv .player-toast {
     box-shadow: 0 16px 60px rgba(0, 0, 0, 0.95);
 }
 
+body.tizen-tv .player-action-btn {
+    font-size: 18px;
+    padding: 13px 26px;
+    border-radius: 10px;
+}
+
+body.tizen-tv .player-subtitle-overlay {
+    bottom: 100px;
+}
+
+body.tizen-tv .subtitle-cue-text {
+    font-size: 38px;
+    padding: 12px 36px;
+    border-radius: 12px;
+}
+
+body.tizen-tv .audio-sub-card {
+    width: 1100px;
+    padding: 36px 46px;
+    border-radius: 20px;
+}
+
+body.tizen-tv .audio-sub-tab {
+    font-size: 20px;
+    padding: 14px 30px;
+}
+
+body.tizen-tv .sub-section-title {
+    font-size: 18px;
+    margin-bottom: 18px;
+}
+
+body.tizen-tv .sub-lang-btn {
+    font-size: 18px;
+    padding: 18px 22px;
+}
+
+body.tizen-tv .sub-timing-row {
+    padding: 18px 26px;
+}
+
+body.tizen-tv .timing-label {
+    font-size: 18px;
+}
+
+body.tizen-tv .timing-btn {
+    padding: 10px 22px;
+    font-size: 17px;
+}
+
+body.tizen-tv .timing-val {
+    font-size: 20px;
+}
+
+body.tizen-tv .audio-card-badge {
+    font-size: 15px;
+    padding: 6px 14px;
+}
+
+body.tizen-tv .audio-card-info h4 {
+    font-size: 22px;
+}
+
+body.tizen-tv .audio-card-info p {
+    font-size: 16px;
+}
+
 /* Native Offline Player Controls Focus */
 .native-ctrl-btn.focused {
     transform: scale(1.2) !important;

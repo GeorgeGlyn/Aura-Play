@@ -99,8 +99,32 @@ const Navigation = {
 
         // Special D-pad handling when online Cinema Stream Player is open
         if (window.Player && window.Player.isOpen) {
+            // When Audio & Subtitles TV Modal is open
+            if (window.Player.isAudioSubModalOpen) {
+                if (keyCode === 27) { // Escape
+                    e.preventDefault();
+                    window.Player.closeAudioSubModal();
+                    return;
+                }
+                if (keyCode === 13) { // Enter / OK
+                    e.preventDefault();
+                    if (this.currentFocus) {
+                        this.currentFocus.click();
+                    }
+                    return;
+                }
+                if ([37, 38, 39, 40].includes(keyCode)) {
+                    e.preventDefault();
+                    this.moveFocus(keyCode);
+                    return;
+                }
+                return;
+            }
+
             const isTopHudFocused = this.currentFocus && 
-                (this.currentFocus.id === "player-back-btn" || this.currentFocus.classList.contains("server-btn"));
+                (this.currentFocus.id === "player-back-btn" || 
+                 this.currentFocus.id === "player-audio-sub-btn" ||
+                 this.currentFocus.classList.contains("server-btn"));
 
             if (keyCode === 13 || keyCode === 32) { // OK / Enter / Space
                 e.preventDefault();
@@ -112,12 +136,12 @@ const Navigation = {
                 return;
             }
 
-            if (keyCode === 38) { // Up -> Reveal Top HUD & Focus Back button
+            if (keyCode === 38) { // Up -> Reveal Top HUD & Focus Audio & Subtitles or Back button
                 e.preventDefault();
                 if (!isTopHudFocused) {
                     window.Player.showHudTemporarily();
-                    const backBtn = document.getElementById("player-back-btn");
-                    if (backBtn) this.setFocus(backBtn);
+                    const targetBtn = document.getElementById("player-audio-sub-btn") || document.getElementById("player-back-btn");
+                    if (targetBtn) this.setFocus(targetBtn);
                 }
                 return;
             } else if (keyCode === 40) { // Down -> Hide Top HUD, return to clean video viewing
@@ -131,6 +155,7 @@ const Navigation = {
                 if (isTopHudFocused) {
                     const hudButtons = [
                         document.getElementById("player-back-btn"),
+                        document.getElementById("player-audio-sub-btn"),
                         document.getElementById("server-btn-vidsrcpm"),
                         document.getElementById("server-btn-moviesapi"),
                         document.getElementById("server-btn-twoembed"),
@@ -149,6 +174,7 @@ const Navigation = {
                 if (isTopHudFocused) {
                     const hudButtons = [
                         document.getElementById("player-back-btn"),
+                        document.getElementById("player-audio-sub-btn"),
                         document.getElementById("server-btn-vidsrcpm"),
                         document.getElementById("server-btn-moviesapi"),
                         document.getElementById("server-btn-twoembed"),
@@ -197,8 +223,11 @@ const Navigation = {
         if (window.NativePlayer && window.NativePlayer.isOpen) {
             return document.getElementById("native-player-container");
         }
-        // If Player is open, scope to player controls
+        // If Player is open:
         if (window.Player && window.Player.isOpen) {
+            if (window.Player.isAudioSubModalOpen) {
+                return document.getElementById("audio-sub-modal");
+            }
             return document.getElementById("player-container");
         }
         // If Details Modal is open, scope to modal

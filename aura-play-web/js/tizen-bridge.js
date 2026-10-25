@@ -87,8 +87,12 @@ const TizenBridge = {
             return;
         }
 
-        // 1. If embed video player is open, close it
+        // 1. If embed video player is open:
         if (window.Player && window.Player.isOpen) {
+            if (window.Player.isAudioSubModalOpen) {
+                window.Player.closeAudioSubModal();
+                return;
+            }
             window.Player.close();
             return;
         }

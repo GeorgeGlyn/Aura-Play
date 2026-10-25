@@ -159,6 +159,11 @@
             <span class="player-toast-text" id="player-toast-text"></span>
         </div>
         
+        <!-- On-Screen Subtitle Overlay -->
+        <div class="player-subtitle-overlay hidden" id="player-subtitle-overlay">
+            <span class="subtitle-cue-text" id="subtitle-cue-text"></span>
+        </div>
+        
         <!-- Top HUD -->
         <div class="player-hud" id="player-hud">
             <button class="player-back-btn focusable" tabindex="0" id="player-back-btn" onclick="Player.close()">
@@ -168,11 +173,103 @@
                 <div class="player-title" id="player-title">Title</div>
                 <div class="player-subtitle" id="player-subtitle">Season 1 • Episode 1</div>
             </div>
-            <div class="player-servers" id="player-servers">
-                <button class="server-btn focusable active" tabindex="0" id="server-btn-vidsrcpm" onclick="Player.switchServer('vidsrc_pm')">Server 1</button>
-                <button class="server-btn focusable" tabindex="0" id="server-btn-moviesapi" onclick="Player.switchServer('moviesapi')">Server 2</button>
-                <button class="server-btn focusable" tabindex="0" id="server-btn-twoembed" onclick="Player.switchServer('twoembed')">Server 3</button>
-                <button class="server-btn focusable" tabindex="0" id="server-btn-vidlink" onclick="Player.switchServer('vidlink')">Server 4</button>
+            <div class="player-hud-right">
+                <button class="player-action-btn focusable" tabindex="0" id="player-audio-sub-btn" onclick="Player.openAudioSubModal()">
+                    💬 Audio &amp; Subtitles
+                </button>
+                <div class="player-servers" id="player-servers">
+                    <button class="server-btn focusable active" tabindex="0" id="server-btn-vidsrcpm" onclick="Player.switchServer('vidsrc_pm')">Server 1</button>
+                    <button class="server-btn focusable" tabindex="0" id="server-btn-moviesapi" onclick="Player.switchServer('moviesapi')">Server 2</button>
+                    <button class="server-btn focusable" tabindex="0" id="server-btn-twoembed" onclick="Player.switchServer('twoembed')">Server 3</button>
+                    <button class="server-btn focusable" tabindex="0" id="server-btn-vidlink" onclick="Player.switchServer('vidlink')">Server 4</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Audio & Subtitles TV Sheet Modal -->
+        <div class="audio-sub-modal-overlay hidden" id="audio-sub-modal">
+            <div class="audio-sub-card">
+                <div class="audio-sub-header">
+                    <div class="audio-sub-tabs">
+                        <button class="audio-sub-tab active focusable" id="tab-subtitles" tabindex="0" onclick="Player.switchAudioSubTab('subtitles')">💬 Subtitles</button>
+                        <button class="audio-sub-tab focusable" id="tab-audio" tabindex="0" onclick="Player.switchAudioSubTab('audio')">🔊 Audio &amp; Servers</button>
+                    </div>
+                    <button class="audio-sub-close focusable" id="audio-sub-close-btn" tabindex="0" onclick="Player.closeAudioSubModal()">✕</button>
+                </div>
+
+                <!-- Subtitles Tab Content -->
+                <div class="audio-sub-body" id="subtitles-tab-content">
+                    <div class="sub-section-title">Select Subtitle Language</div>
+                    <div class="sub-language-grid" id="sub-language-grid">
+                        <button class="sub-lang-btn active focusable" tabindex="0" data-lang="off" onclick="Player.selectSubtitle('off')">Off (None)</button>
+                        <button class="sub-lang-btn focusable" tabindex="0" data-lang="en" onclick="Player.selectSubtitle('en')">English</button>
+                        <button class="sub-lang-btn focusable" tabindex="0" data-lang="es" onclick="Player.selectSubtitle('es')">Spanish (Español)</button>
+                        <button class="sub-lang-btn focusable" tabindex="0" data-lang="fr" onclick="Player.selectSubtitle('fr')">French (Français)</button>
+                        <button class="sub-lang-btn focusable" tabindex="0" data-lang="de" onclick="Player.selectSubtitle('de')">German (Deutsch)</button>
+                        <button class="sub-lang-btn focusable" tabindex="0" data-lang="hi" onclick="Player.selectSubtitle('hi')">Hindi (हिंदी)</button>
+                        <button class="sub-lang-btn focusable" tabindex="0" data-lang="ar" onclick="Player.selectSubtitle('ar')">Arabic (العربية)</button>
+                        <button class="sub-lang-btn focusable" tabindex="0" data-lang="pt" onclick="Player.selectSubtitle('pt')">Portuguese (Português)</button>
+                        <button class="sub-lang-btn focusable" tabindex="0" data-lang="it" onclick="Player.selectSubtitle('it')">Italian (Italiano)</button>
+                        <button class="sub-lang-btn focusable" tabindex="0" data-lang="ja" onclick="Player.selectSubtitle('ja')">Japanese (日本語)</button>
+                    </div>
+
+                    <div class="sub-timing-row">
+                        <span class="timing-label">Subtitle Sync / Delay:</span>
+                        <div class="timing-controls">
+                            <button class="timing-btn focusable" tabindex="0" id="timing-minus-btn" onclick="Player.adjustSubtitleOffset(-0.5)">-0.5s</button>
+                            <span class="timing-val" id="subtitle-offset-val">0.0s</span>
+                            <button class="timing-btn focusable" tabindex="0" id="timing-plus-btn" onclick="Player.adjustSubtitleOffset(0.5)">+0.5s</button>
+                            <button class="timing-btn focusable" tabindex="0" id="timing-reset-btn" onclick="Player.adjustSubtitleOffset(0, true)">Reset</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Audio & Servers Tab Content -->
+                <div class="audio-sub-body hidden" id="audio-tab-content">
+                    <div class="sub-section-title">Select Audio Stream / Server</div>
+                    <div class="audio-server-list">
+                        <div class="audio-server-card focusable" id="audio-card-vidsrc" tabindex="0" onclick="Player.switchServer('vidsrc_pm'); Player.closeAudioSubModal();">
+                            <div class="audio-card-left">
+                                <span class="audio-card-badge">Server 1</span>
+                                <div class="audio-card-info">
+                                    <h4>VidSrc Cinema</h4>
+                                    <p>Original Audio (Dolby Atmos / 5.1) • Multi-Subtitles</p>
+                                </div>
+                            </div>
+                            <span class="audio-card-status" id="status-vidsrc">Active</span>
+                        </div>
+                        <div class="audio-server-card focusable" id="audio-card-vidlink" tabindex="0" onclick="Player.switchServer('vidlink'); Player.closeAudioSubModal();">
+                            <div class="audio-card-left">
+                                <span class="audio-card-badge">Server 4</span>
+                                <div class="audio-card-info">
+                                    <h4>VidLink Pro</h4>
+                                    <p>Multi-Audio Dubs &amp; External Subtitle Engine</p>
+                                </div>
+                            </div>
+                            <span class="audio-card-status" id="status-vidlink"></span>
+                        </div>
+                        <div class="audio-server-card focusable" id="audio-card-moviesapi" tabindex="0" onclick="Player.switchServer('moviesapi'); Player.closeAudioSubModal();">
+                            <div class="audio-card-left">
+                                <span class="audio-card-badge">Server 2</span>
+                                <div class="audio-card-info">
+                                    <h4>MoviesAPI Ultra</h4>
+                                    <p>Alternative High-Speed Audio Stream</p>
+                                </div>
+                            </div>
+                            <span class="audio-card-status" id="status-moviesapi"></span>
+                        </div>
+                        <div class="audio-server-card focusable" id="audio-card-twoembed" tabindex="0" onclick="Player.switchServer('twoembed'); Player.closeAudioSubModal();">
+                            <div class="audio-card-left">
+                                <span class="audio-card-badge">Server 3</span>
+                                <div class="audio-card-info">
+                                    <h4>2Embed Mirror</h4>
+                                    <p>Backup Cinema Stream &amp; Audio</p>
+                                </div>
+                            </div>
+                            <span class="audio-card-status" id="status-twoembed"></span>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

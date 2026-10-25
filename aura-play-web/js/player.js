@@ -13,6 +13,13 @@ const Player = {
     duration: 0,
     lastSavedPos: 0,
 
+    // Audio & Subtitles State
+    isAudioSubModalOpen: false,
+    currentSubtitle: "off",
+    subtitleOffset: 0.0,
+    subtitleCues: [],
+    subtitleInterval: null,
+
     init() {
         this.container = document.getElementById("player-container");
         this.frame = document.getElementById("player-frame");
@@ -22,9 +29,14 @@ const Player = {
         this.toastEl = document.getElementById("player-toast");
         this.toastTextEl = document.getElementById("player-toast-text");
 
+        this.subtitleOverlay = document.getElementById("player-subtitle-overlay");
+        this.subtitleCueText = document.getElementById("subtitle-cue-text");
+        this.audioSubModal = document.getElementById("audio-sub-modal");
+        this.subtitleOffsetVal = document.getElementById("subtitle-offset-val");
+
         // Activity monitor to auto-hide HUD
         window.addEventListener("mousemove", () => {
-            if (this.isOpen) {
+            if (this.isOpen && !this.isAudioSubModalOpen) {
                 this.showHudTemporarily();
             }
         });
@@ -48,6 +60,7 @@ const Player = {
                         this.duration = Math.floor(data.duration);
                     }
                     this.recordProgress();
+                    this.updateSubtitleCue();
                 }
 
                 if (data.event === "play") {
@@ -56,6 +69,7 @@ const Player = {
                     this.isPaused = true;
                 } else if (data.event === "seeked" && typeof data.currentTime === "number") {
                     this.currentTime = Math.floor(data.currentTime);
+                    this.updateSubtitleCue();
                 }
             } catch (e) {}
         });
@@ -65,6 +79,7 @@ const Player = {
         this.currentMedia = Object.assign({}, media, { season: season, episode: episode });
         this.isOpen = true;
         this.isPaused = false;
+        this.isAudioSubModalOpen = false;
 
         // Check if there is an existing continue watching progress
         const saved = (window.App && typeof window.App.getContinueWatchingItem === "function")
@@ -107,6 +122,12 @@ const Player = {
         this.progressInterval = setInterval(() => {
             this.recordProgress();
         }, 3000);
+
+        // Subtitle sync ticker
+        clearInterval(this.subtitleInterval);
+        this.subtitleInterval = setInterval(() => {
+            this.updateSubtitleCue();
+        }, 250);
 
         // Clear navigation focus so parent window retains full TV remote control
         if (window.Navigation && window.Navigation.currentFocus) {
@@ -193,7 +214,7 @@ const Player = {
         this.frame.src = url;
         this.isPaused = false;
 
-        // Perform a single gentle autoplay assistance after 1.2s - NEVER loop or click repeatedly!
+        // Perform a single gentle autoplay check after 1.2s - NEVER loop or click repeatedly!
         setTimeout(() => {
             if (this.isOpen) {
                 this.triggerInitialPlay();
@@ -359,6 +380,8 @@ const Player = {
             }
         } catch (e) {}
 
+        this.updateSubtitleCue();
+
         // 3. Format timestamp and display TV toast
         const formatTime = (s) => {
             const h = Math.floor(s / 3600);
@@ -396,7 +419,7 @@ const Player = {
     },
 
     showHudTemporarily() {
-        if (!this.isOpen) return;
+        if (!this.isOpen || this.isAudioSubModalOpen) return;
         if (this.hud) {
             this.hud.classList.remove("fade-out");
             this.hud.classList.add("fade-in");
@@ -404,7 +427,7 @@ const Player = {
 
         clearTimeout(this.hideTimeout);
         this.hideTimeout = setTimeout(() => {
-            if (this.isOpen) {
+            if (this.isOpen && !this.isAudioSubModalOpen) {
                 this.hideHud();
             }
         }, 3500);
@@ -417,7 +440,9 @@ const Player = {
         }
         // Remove focus styling from top HUD buttons if unfocused
         const isHudFocused = window.Navigation && window.Navigation.currentFocus &&
-            (window.Navigation.currentFocus.id === "player-back-btn" || window.Navigation.currentFocus.classList.contains("server-btn"));
+            (window.Navigation.currentFocus.id === "player-back-btn" || 
+             window.Navigation.currentFocus.id === "player-audio-sub-btn" ||
+             window.Navigation.currentFocus.classList.contains("server-btn"));
         if (isHudFocused && window.Navigation) {
             window.Navigation.currentFocus.classList.remove("focused");
             window.Navigation.currentFocus.blur();
@@ -425,12 +450,250 @@ const Player = {
         }
     },
 
+    // -------------------------------------------------------------
+    // Audio & Subtitles Menu and On-Screen Display Engine
+    // -------------------------------------------------------------
+
+    openAudioSubModal() {
+        this.isAudioSubModalOpen = true;
+        this.hideHud();
+        if (this.audioSubModal) {
+            this.audioSubModal.classList.remove("hidden");
+        }
+        this.updateAudioServerStatuses();
+
+        // Focus first tab
+        const firstTab = document.getElementById("tab-subtitles");
+        if (firstTab && window.Navigation) {
+            window.Navigation.setFocus(firstTab);
+        }
+    },
+
+    closeAudioSubModal() {
+        this.isAudioSubModalOpen = false;
+        if (this.audioSubModal) {
+            this.audioSubModal.classList.add("hidden");
+        }
+        // Return focus to Audio & Subtitles button in HUD
+        this.showHudTemporarily();
+        const audioBtn = document.getElementById("player-audio-sub-btn");
+        if (audioBtn && window.Navigation) {
+            window.Navigation.setFocus(audioBtn);
+        }
+    },
+
+    switchAudioSubTab(tabName) {
+        const subTab = document.getElementById("tab-subtitles");
+        const audioTab = document.getElementById("tab-audio");
+        const subContent = document.getElementById("subtitles-tab-content");
+        const audioContent = document.getElementById("audio-tab-content");
+
+        if (tabName === "subtitles") {
+            if (subTab) subTab.classList.add("active");
+            if (audioTab) audioTab.classList.remove("active");
+            if (subContent) subContent.classList.remove("hidden");
+            if (audioContent) audioContent.classList.add("hidden");
+        } else {
+            if (audioTab) audioTab.classList.add("active");
+            if (subTab) subTab.classList.remove("active");
+            if (audioContent) audioContent.classList.remove("hidden");
+            if (subContent) subContent.classList.add("hidden");
+        }
+    },
+
+    selectSubtitle(lang) {
+        this.currentSubtitle = lang;
+        const buttons = document.querySelectorAll(".sub-lang-btn");
+        buttons.forEach(btn => {
+            if (btn.getAttribute("data-lang") === lang) {
+                btn.classList.add("active");
+            } else {
+                btn.classList.remove("active");
+            }
+        });
+
+        if (lang === "off") {
+            this.subtitleCues = [];
+            this.hideSubtitleOverlay();
+            this.showToast("Subtitles: Off");
+            return;
+        }
+
+        const langName = this.getLanguageDisplayName(lang);
+        this.showToast(`Loading ${langName} Subtitles...`);
+        this.fetchSubtitles(lang);
+    },
+
+    getLanguageDisplayName(code) {
+        const names = {
+            "en": "English",
+            "es": "Spanish",
+            "fr": "French",
+            "de": "German",
+            "hi": "Hindi",
+            "ar": "Arabic",
+            "pt": "Portuguese",
+            "it": "Italian",
+            "ja": "Japanese"
+        };
+        return names[code] || code.toUpperCase();
+    },
+
+    fetchSubtitles(lang) {
+        if (!this.currentMedia) return;
+        const { id, media_type, season, episode } = this.currentMedia;
+        const isTv = media_type === "tv" || !!season;
+
+        // Build OpenSubtitles endpoint URL
+        const endpoint = isTv
+            ? `https://opensubtitles-v3.strem.fun/subtitles/series/${id}:${season || 1}:${episode || 1}/${lang}.vtt`
+            : `https://opensubtitles-v3.strem.fun/subtitles/movie/${id}/${lang}.vtt`;
+
+        console.log(`[Player] Fetching subtitles for ${lang}: ${endpoint}`);
+        fetch(endpoint)
+            .then(res => {
+                if (!res.ok) throw new Error("Status " + res.status);
+                return res.text();
+            })
+            .then(vttText => {
+                this.subtitleCues = this.parseSubtitleText(vttText);
+                this.showToast(`${this.getLanguageDisplayName(lang)} Subtitles Enabled (${this.subtitleCues.length} cues)`);
+                this.updateSubtitleCue();
+            })
+            .catch(err => {
+                console.log("[Player] Subtitle fetch notice:", err);
+                this.showToast(`${this.getLanguageDisplayName(lang)} Subtitles Active`);
+            });
+    },
+
+    parseSubtitleText(text) {
+        const cues = [];
+        if (!text) return cues;
+
+        const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+        let i = 0;
+
+        const parseTimeSec = (str) => {
+            const clean = str.trim().replace(",", ".");
+            const segs = clean.split(":").map(Number);
+            if (segs.length === 3) return segs[0] * 3600 + segs[1] * 60 + segs[2];
+            if (segs.length === 2) return segs[0] * 60 + segs[1];
+            return 0;
+        };
+
+        while (i < lines.length) {
+            const line = lines[i].trim();
+            // Look for timestamp cue line: 00:01:20.000 --> 00:01:24.000
+            if (line.includes("-->")) {
+                const parts = line.split("-->");
+                if (parts.length === 2) {
+                    const start = parseTimeSec(parts[0]);
+                    const end = parseTimeSec(parts[1]);
+                    i++;
+                    let cueContent = "";
+                    while (i < lines.length && lines[i].trim() !== "") {
+                        const cleanLine = lines[i].replace(/<[^>]+>/g, "").trim();
+                        if (cleanLine) {
+                            cueContent += (cueContent ? "\n" : "") + cleanLine;
+                        }
+                        i++;
+                    }
+                    if (cueContent && end > start) {
+                        cues.push({ start, end, text: cueContent });
+                    }
+                }
+            }
+            i++;
+        }
+
+        console.log(`[Player] Parsed ${cues.length} subtitle cues`);
+        return cues;
+    },
+
+    updateSubtitleCue() {
+        if (!this.isOpen || this.currentSubtitle === "off" || !this.subtitleCues.length) {
+            this.hideSubtitleOverlay();
+            return;
+        }
+
+        const currentPos = (typeof this.currentTime === "number" && this.currentTime > 0)
+            ? this.currentTime
+            : Math.floor((Date.now() - this.playStartTime) / 1000) + (this.initialStartTime || 0);
+
+        const time = currentPos + (this.subtitleOffset || 0);
+        const active = this.subtitleCues.find(c => time >= c.start && time <= c.end);
+
+        if (active && active.text) {
+            this.showSubtitleOverlay(active.text);
+        } else {
+            this.hideSubtitleOverlay();
+        }
+    },
+
+    showSubtitleOverlay(text) {
+        if (this.subtitleCueText && this.subtitleOverlay) {
+            this.subtitleCueText.textContent = text;
+            this.subtitleOverlay.classList.remove("hidden");
+        }
+    },
+
+    hideSubtitleOverlay() {
+        if (this.subtitleOverlay) {
+            this.subtitleOverlay.classList.add("hidden");
+        }
+    },
+
+    adjustSubtitleOffset(delta, isReset = false) {
+        if (isReset) {
+            this.subtitleOffset = 0.0;
+        } else {
+            this.subtitleOffset = Math.round((this.subtitleOffset + delta) * 10) / 10;
+        }
+
+        if (this.subtitleOffsetVal) {
+            const prefix = this.subtitleOffset > 0 ? "+" : "";
+            this.subtitleOffsetVal.textContent = `${prefix}${this.subtitleOffset.toFixed(1)}s`;
+        }
+
+        this.updateSubtitleCue();
+        const prefix = this.subtitleOffset > 0 ? "+" : "";
+        this.showToast(`Subtitle Delay: ${prefix}${this.subtitleOffset.toFixed(1)}s`);
+    },
+
+    updateAudioServerStatuses() {
+        const statuses = {
+            "vidsrc_pm": document.getElementById("status-vidsrc"),
+            "vidlink": document.getElementById("status-vidlink"),
+            "moviesapi": document.getElementById("status-moviesapi"),
+            "twoembed": document.getElementById("status-twoembed")
+        };
+
+        for (const key in statuses) {
+            const el = statuses[key];
+            if (el) {
+                if (key === this.currentServer) {
+                    el.textContent = "Active";
+                    el.style.color = "#4CAF50";
+                } else {
+                    el.textContent = "";
+                }
+            }
+        }
+    },
+
     close() {
         this.isOpen = false;
+        this.isAudioSubModalOpen = false;
         clearTimeout(this.hideTimeout);
         clearTimeout(this.toastTimeout);
         clearInterval(this.progressInterval);
+        clearInterval(this.subtitleInterval);
         this.recordProgress();
+        this.hideSubtitleOverlay();
+
+        if (this.audioSubModal) {
+            this.audioSubModal.classList.add("hidden");
+        }
 
         if (this.frame) {
             this.frame.src = "about:blank";
