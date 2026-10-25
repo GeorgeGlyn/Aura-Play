@@ -15,7 +15,6 @@ const Player = {
         this.titleEl = document.getElementById("player-title");
         this.subtitleEl = document.getElementById("player-subtitle");
         this.hud = document.getElementById("player-hud");
-        this.streamHud = document.getElementById("player-stream-hud");
 
         // Activity monitor to auto-hide HUD
         window.addEventListener("mousemove", () => {
@@ -86,18 +85,16 @@ const Player = {
             this.recordProgress();
         }, 3000);
 
-        // Auto-focus the Play button on the TV remote control bar so user can just press OK!
+        // Clear navigation focus from background buttons and focus video frame
+        if (window.Navigation && window.Navigation.currentFocus) {
+            window.Navigation.currentFocus.classList.remove("focused");
+            window.Navigation.currentFocus.blur();
+            window.Navigation.currentFocus = null;
+        }
+
         setTimeout(() => {
-            const playBtn = document.getElementById("stream-play-btn");
-            if (playBtn && window.Navigation) {
-                window.Navigation.setFocus(playBtn);
-            } else {
-                const backBtn = document.getElementById("player-back-btn");
-                if (backBtn && window.Navigation) {
-                    window.Navigation.setFocus(backBtn);
-                }
-            }
-        }, 150);
+            this.focusVideoFrame();
+        }, 300);
 
         this.showHudTemporarily();
     },
@@ -294,37 +291,57 @@ const Player = {
         }
     },
 
-    interactStream() {
+    togglePlayPause() {
         this.showHudTemporarily();
         const frame = document.getElementById("player-frame");
-        if (frame) {
-            frame.focus();
-            if (frame.contentWindow) {
-                try {
-                    frame.contentWindow.focus();
-                } catch(e) {}
+        if (!frame) return;
+
+        let toggled = false;
+        try {
+            const rootDoc = frame.contentDocument || (frame.contentWindow ? frame.contentWindow.document : null);
+            function toggleInDoc(doc) {
+                if (!doc) return null;
+                const v = doc.querySelector('video');
+                if (v) {
+                    if (v.paused) {
+                        v.muted = false;
+                        v.play().catch(() => {});
+                        return "playing";
+                    } else {
+                        v.pause();
+                        return "paused";
+                    }
+                }
+                const iframes = doc.querySelectorAll('iframe');
+                for (let i = 0; i < iframes.length; i++) {
+                    try {
+                        const c = iframes[i].contentDocument || (iframes[i].contentWindow ? iframes[i].contentWindow.document : null);
+                        const res = toggleInDoc(c);
+                        if (res !== null) return res;
+                    } catch(e) {}
+                }
+                return null;
             }
+            if (rootDoc) {
+                const res = toggleInDoc(rootDoc);
+                if (res !== null) toggled = true;
+            }
+        } catch(e) {}
 
-            // 1. Trigger deep play in all accessible documents
-            const played = this.triggerDeepPlay();
-
-            // 2. Dispatch cross-origin triggers for protected embeds
+        // Fallback for cross-origin iframes
+        if (!toggled && frame.contentWindow) {
             try {
-                frame.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
+                frame.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
+                frame.contentWindow.postMessage({ type: 'pause' }, '*');
                 frame.contentWindow.postMessage({ type: 'play' }, '*');
                 const keyEvt = new KeyboardEvent('keydown', { key: ' ', code: 'Space', keyCode: 32, bubbles: true });
                 frame.contentWindow.dispatchEvent(keyEvt);
             } catch(e) {}
         }
-
-        const playIcon = document.getElementById("stream-play-icon");
-        if (playIcon) {
-            playIcon.textContent = playIcon.textContent === "▶" ? "⏸" : "▶";
-        }
     },
 
-    togglePlayPause() {
-        this.interactStream();
+    interactStream() {
+        this.togglePlayPause();
     },
 
     focusVideoFrame() {
@@ -385,10 +402,9 @@ const Player = {
     reloadStream() {
         this.loadStreamUrl();
         this.showHudTemporarily();
-        const playBtn = document.getElementById("stream-play-btn");
-        if (playBtn && window.Navigation) {
-            window.Navigation.setFocus(playBtn);
-        }
+        setTimeout(() => {
+            this.focusVideoFrame();
+        }, 300);
     },
 
     showHudTemporarily() {
@@ -399,10 +415,6 @@ const Player = {
             this.hud.classList.remove("fade-out");
             this.hud.classList.add("fade-in");
         }
-        if (this.streamHud) {
-            this.streamHud.classList.remove("fade-out");
-            this.streamHud.classList.add("fade-in");
-        }
 
         clearTimeout(this.hideTimeout);
         this.hideTimeout = setTimeout(() => {
@@ -411,12 +423,8 @@ const Player = {
                     this.hud.classList.remove("fade-in");
                     this.hud.classList.add("fade-out");
                 }
-                if (this.streamHud) {
-                    this.streamHud.classList.remove("fade-in");
-                    this.streamHud.classList.add("fade-out");
-                }
             }
-        }, 4000);
+        }, 3500);
     },
 
     close() {

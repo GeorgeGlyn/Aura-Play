@@ -11,7 +11,7 @@
     <link rel="stylesheet" href="css/app.css">
     <link rel="stylesheet" href="css/tv.css">
 </head>
-<body>
+<body class="tizen-tv">
 
     <!-- Top Navigation Bar -->
     <header class="navbar" id="main-navbar">
@@ -171,29 +171,6 @@
             </div>
         </div>
 
-        <!-- TV Remote Stream Action Bar (Navigable with D-pad Down from Servers) -->
-        <div class="player-stream-hud" id="player-stream-hud">
-            <div class="stream-control-card">
-                <button class="stream-btn focusable" id="stream-rewind-btn" tabindex="0" onclick="Player.seek(-10)" title="Rewind 10s">
-                    <span class="stream-icon">↺</span> 10s
-                </button>
-                <button class="stream-btn stream-play-btn focusable" id="stream-play-btn" tabindex="0" onclick="Player.interactStream()" title="Play / Resume Stream">
-                    <span class="stream-icon" id="stream-play-icon">▶</span> Play Video
-                </button>
-                <button class="stream-btn focusable" id="stream-forward-btn" tabindex="0" onclick="Player.seek(10)" title="Forward 10s">
-                    10s <span class="stream-icon">↻</span>
-                </button>
-                <button class="stream-btn focusable" id="stream-focus-btn" tabindex="0" onclick="Player.focusVideoFrame()" title="Direct TV Remote into Player">
-                    <span class="stream-icon">⛶</span> Focus Player
-                </button>
-                <button class="stream-btn focusable" id="stream-reload-btn" tabindex="0" onclick="Player.reloadStream()" title="Reload Stream">
-                    <span class="stream-icon">🔄</span> Reload
-                </button>
-            </div>
-            <div class="stream-hint">
-                <span class="stream-hint-badge">TV Remote</span> Press <b>Down</b> from Server to reach <b>Play Video</b> • Press <b>Enter / OK</b> to start playback • Press <b>Up</b> to return to Servers
-            </div>
-        </div>
     </div>
 
     <!-- Application Logic Scripts -->

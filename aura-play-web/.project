@@ -25,5 +25,6 @@
 		<nature>org.tizen.web.project.nature.TizenWebNature</nature>
 		<nature>json.validation.nature</nature>
 		<nature>org.tizen.web.project.builder.WebNature</nature>
+		<nature>org.eclipse.wst.jsdt.core.jsNature</nature>
 	</natures>
 </projectDescription>

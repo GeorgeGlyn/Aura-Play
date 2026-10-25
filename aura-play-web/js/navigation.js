@@ -97,6 +97,56 @@ const Navigation = {
             }
         }
 
+        // Special D-pad handling when online Cinema Stream Player is open
+        if (window.Player && window.Player.isOpen) {
+            const isTopHudFocused = this.currentFocus && 
+                (this.currentFocus.id === "player-back-btn" || this.currentFocus.classList.contains("server-btn"));
+
+            if (keyCode === 13 || keyCode === 32) { // OK / Enter / Space
+                if (isTopHudFocused) {
+                    e.preventDefault();
+                    this.currentFocus.click();
+                    return;
+                }
+                e.preventDefault();
+                window.Player.togglePlayPause();
+                return;
+            }
+
+            if (keyCode === 38) { // Up -> Reveal Top HUD & Focus Back button
+                if (!isTopHudFocused) {
+                    e.preventDefault();
+                    window.Player.showHudTemporarily();
+                    const backBtn = document.getElementById("player-back-btn");
+                    if (backBtn) this.setFocus(backBtn);
+                    return;
+                }
+            } else if (keyCode === 40) { // Down -> Move focus back into Video Player
+                if (isTopHudFocused) {
+                    e.preventDefault();
+                    if (this.currentFocus) {
+                        this.currentFocus.classList.remove("focused");
+                        this.currentFocus.blur();
+                    }
+                    this.currentFocus = null;
+                    window.Player.focusVideoFrame();
+                    return;
+                }
+            } else if (keyCode === 37) { // Left -> Seek -10s if watching video
+                if (!isTopHudFocused) {
+                    e.preventDefault();
+                    window.Player.seek(-10);
+                    return;
+                }
+            } else if (keyCode === 39) { // Right -> Seek +10s if watching video
+                if (!isTopHudFocused) {
+                    e.preventDefault();
+                    window.Player.seek(10);
+                    return;
+                }
+            }
+        }
+
         // D-pad Direction Keys
         // 37 = Left, 38 = Up, 39 = Right, 40 = Down, 13 = Enter
         if ([37, 38, 39, 40, 13].includes(keyCode)) {
@@ -108,16 +158,6 @@ const Navigation = {
                 }
                 if (keyCode === 37 || keyCode === 39) {
                     return; // Allow moving cursor inside search input
-                }
-            }
-
-            // If active element is the player iframe, allow Enter and Space to pass directly into the web player
-            if (document.activeElement && document.activeElement.tagName === "IFRAME") {
-                if (keyCode === 13 || keyCode === 32) {
-                    if (window.Player && typeof window.Player.interactStream === "function") {
-                        window.Player.interactStream();
-                    }
-                    return;
                 }
             }
 

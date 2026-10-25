@@ -56,6 +56,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.pointerInput
@@ -613,7 +614,11 @@ fun WebStreamPlayer(
                     resetControlsTimer()
                     when (keyEvent.key) {
                         Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
-                            if (!showOverlay) {
+                            if (isTvDevice) {
+                                onPlayPause()
+                                showOverlay = true
+                                true
+                            } else if (!showOverlay) {
                                 showOverlay = true
                                 true
                             } else {
@@ -913,58 +918,146 @@ fun WebStreamPlayer(
                 }
             }
 
-            // Full Netflix Overlay Controls (works on TV remote & mobile)
+            // Controls Overlay
             if (showOverlay) {
-                PlayerControlsOverlay(
-                    isPlaying = isPlaying,
-                    currentPosition = currentPosition,
-                    totalDuration = totalDuration,
-                    playbackSpeed = playbackSpeed,
-                    isLandscape = isLandscape,
-                    isFillScreen = isFillScreen,
-                    centerPlayFocusRequester = centerPlayFocusRequester,
-                    title = title.ifBlank { "Aura Play Free Web Stream" },
-                    subtitle = if (sniffedStreamUrl != null) "Direct Stream Ready" else "Ad-Blocked • 1080p FHD",
-                    onInteraction = resetControlsTimer,
-                    onBack = {
-                        if (currentPosition > 2000L) {
-                            WatchProgressManager.saveProgress(
-                                context = context,
-                                urlOrPath = videoUrl,
-                                positionMs = currentPosition,
-                                durationMs = totalDuration,
-                                mediaId = mediaId,
-                                mediaType = mediaType,
-                                title = title,
-                                posterPath = posterPath
-                            )
-                        }
-                        webViewRef?.destroy()
-                        onBack()
-                    },
-                    onPlayPause = onPlayPause,
-                    onSeekRelative = onSeekRelative,
-                    onLockScreen = null,
-                    onToggleSpeed = onToggleSpeed,
-                    onToggleOrientation = {
-                        if (isLandscape) {
-                            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                        } else {
-                            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                        }
-                    },
-                    onToggleFillScreen = {
-                        isFillScreen = !isFillScreen
-                        gestureIndicatorText = if (isFillScreen) "Screen Fill (Zoom)" else "Original Ratio (Fit)"
-                    },
-                    onTracksClicked = null,
-                    onEnterPip = onEnterPip,
-                    onSwitchToNative = if (sniffedStreamUrl != null) {
-                        { onDirectStreamCaptured?.invoke(sniffedStreamUrl!!) }
-                    } else null,
-                    isTv = isTvDevice,
-                    onSeek = onSeek
+                if (isTvDevice) {
+                    // On TV: Unobtrusive auto-hiding top bar leaving the default web player controls fully visible and active!
+                    TvWebPlayerTopBar(
+                        title = title.ifBlank { "Aura Play Free Web Stream" },
+                        subtitle = if (sniffedStreamUrl != null) "Direct Stream Ready" else "1080p FHD • Ad-Blocked",
+                        sniffedStreamUrl = sniffedStreamUrl,
+                        onBack = {
+                            if (currentPosition > 2000L) {
+                                WatchProgressManager.saveProgress(
+                                    context = context,
+                                    urlOrPath = videoUrl,
+                                    positionMs = currentPosition,
+                                    durationMs = totalDuration,
+                                    mediaId = mediaId,
+                                    mediaType = mediaType,
+                                    title = title,
+                                    posterPath = posterPath
+                                )
+                            }
+                            webViewRef?.destroy()
+                            onBack()
+                        },
+                        onSwitchToNative = if (sniffedStreamUrl != null) {
+                            { onDirectStreamCaptured?.invoke(sniffedStreamUrl!!) }
+                        } else null
+                    )
+                } else {
+                    PlayerControlsOverlay(
+                        isPlaying = isPlaying,
+                        currentPosition = currentPosition,
+                        totalDuration = totalDuration,
+                        playbackSpeed = playbackSpeed,
+                        isLandscape = isLandscape,
+                        isFillScreen = isFillScreen,
+                        centerPlayFocusRequester = centerPlayFocusRequester,
+                        title = title.ifBlank { "Aura Play Free Web Stream" },
+                        subtitle = if (sniffedStreamUrl != null) "Direct Stream Ready" else "Ad-Blocked • 1080p FHD",
+                        onInteraction = resetControlsTimer,
+                        onBack = {
+                            if (currentPosition > 2000L) {
+                                WatchProgressManager.saveProgress(
+                                    context = context,
+                                    urlOrPath = videoUrl,
+                                    positionMs = currentPosition,
+                                    durationMs = totalDuration,
+                                    mediaId = mediaId,
+                                    mediaType = mediaType,
+                                    title = title,
+                                    posterPath = posterPath
+                                )
+                            }
+                            webViewRef?.destroy()
+                            onBack()
+                        },
+                        onPlayPause = onPlayPause,
+                        onSeekRelative = onSeekRelative,
+                        onLockScreen = null,
+                        onToggleSpeed = onToggleSpeed,
+                        onToggleOrientation = {
+                            if (isLandscape) {
+                                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                            } else {
+                                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                            }
+                        },
+                        onToggleFillScreen = {
+                            isFillScreen = !isFillScreen
+                            gestureIndicatorText = if (isFillScreen) "Screen Fill (Zoom)" else "Original Ratio (Fit)"
+                        },
+                        onTracksClicked = null,
+                        onEnterPip = onEnterPip,
+                        onSwitchToNative = if (sniffedStreamUrl != null) {
+                            { onDirectStreamCaptured?.invoke(sniffedStreamUrl!!) }
+                        } else null,
+                        isTv = false,
+                        onSeek = onSeek
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun TvWebPlayerTopBar(
+    title: String,
+    subtitle: String,
+    sniffedStreamUrl: String?,
+    onBack: () -> Unit,
+    onSwitchToNative: (() -> Unit)?
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(Color(0xE6000000), Color.Transparent)
                 )
+            )
+            .padding(horizontal = 36.dp, vertical = 24.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(
+            onClick = onBack,
+            modifier = Modifier
+                .size(48.dp)
+                .background(Color(0x55FFFFFF), CircleShape)
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Back",
+                tint = Color.White,
+                modifier = Modifier.size(28.dp)
+            )
+        }
+        Spacer(modifier = Modifier.width(20.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                color = Color.White,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = subtitle,
+                color = Color(0xFFB0B0B0),
+                fontSize = 14.sp
+            )
+        }
+        if (onSwitchToNative != null) {
+            Spacer(modifier = Modifier.width(16.dp))
+            Button(
+                onClick = onSwitchToNative,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE50914))
+            ) {
+                Text("Switch to Native Player", color = Color.White, fontWeight = FontWeight.Bold)
             }
         }
     }

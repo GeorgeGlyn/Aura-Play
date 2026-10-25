@@ -1,29 +1,44 @@
-/* Aura Play - Samsung Tizen 10-Foot TV Experience */
+/* =============================================================================
+   Aura Play – Samsung Tizen & 10-Foot Big Screen TV Design System
+   Enlarged typography, cards, buttons, badges, modals, and player controls
+   ============================================================================= */
 
-/* Focused element glow and scale */
+/* Universal TV Base Settings */
+body.tizen-tv {
+    font-size: 19px !important;
+    cursor: none !important; /* Hide mouse cursor on TV */
+    overflow: hidden !important; /* TV operates strictly via D-pad scrolling */
+    user-select: none;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* -------------------------------------------------------------------------
+   Focus Glow & Scale for 10-Foot TV Experience
+   ------------------------------------------------------------------------- */
 .focusable {
     outline: none;
-    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), 
-                box-shadow 0.25s ease, 
-                border-color 0.25s ease;
+    transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), 
+                box-shadow 0.22s ease, 
+                border-color 0.22s ease;
 }
 
 .focusable.focused,
 .focusable:focus-visible {
-    transform: scale(1.08) !important;
-    outline: 3px solid #E50914 !important;
-    outline-offset: 3px;
-    box-shadow: 0 0 25px rgba(229, 9, 20, 0.85), 
-                0 0 50px rgba(139, 92, 246, 0.4) !important;
-    z-index: 50 !important;
+    transform: scale(1.09) !important;
+    outline: 4px solid #FFFFFF !important;
+    outline-offset: 4px;
+    box-shadow: 0 0 35px rgba(229, 9, 20, 0.95), 
+                0 0 70px rgba(139, 92, 246, 0.5) !important;
+    z-index: 60 !important;
 }
 
-/* Button Focus on TV */
+/* TV Button Focus */
 .btn.focused,
 .btn:focus-visible {
-    transform: scale(1.05) !important;
-    box-shadow: 0 0 30px rgba(229, 9, 20, 0.9) !important;
-    outline: 3px solid #FFFFFF !important;
+    transform: scale(1.08) !important;
+    box-shadow: 0 0 35px rgba(229, 9, 20, 0.95),
+                0 0 50px rgba(255, 255, 255, 0.4) !important;
+    outline: 4px solid #FFFFFF !important;
 }
 
 .btn-primary.focused {
@@ -36,65 +51,380 @@
     color: #FFFFFF !important;
 }
 
-/* Nav Link Focus on TV */
-.nav-link.focused {
-    background: #E50914 !important;
-    color: #FFFFFF !important;
-    transform: scale(1.12) !important;
-    outline: 2px solid #FFFFFF !important;
-    box-shadow: 0 0 20px rgba(229, 9, 20, 0.9) !important;
-    border-radius: 6px !important;
-}
-
-/* Season Chip Focus on TV */
-.season-chip.focused {
-    background: var(--primary) !important;
-    color: #FFFFFF !important;
-    transform: scale(1.06) !important;
-    box-shadow: 0 0 20px var(--primary-glow) !important;
-}
-
-/* Episode Card Focus on TV */
-.episode-card.focused {
-    background: rgba(255, 255, 255, 0.12) !important;
-    transform: scale(1.02) !important;
-    border-color: var(--primary) !important;
-}
-
-/* TV Specific Rules when running on Tizen */
-body.tizen-tv {
-    cursor: none !important; /* Hide mouse cursor on TV */
-    overflow: hidden !important; /* TV operates strictly via D-pad scrolling */
-}
-
+/* -------------------------------------------------------------------------
+   Navbar (Upscaled for TV)
+   ------------------------------------------------------------------------- */
 body.tizen-tv .navbar {
-    height: 80px;
-    padding: 0 60px;
+    height: 96px;
+    padding: 0 64px;
+}
+
+body.tizen-tv .brand-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
 }
 
 body.tizen-tv .brand-name {
-    font-size: 28px;
+    font-size: 32px;
+    letter-spacing: 1.5px;
 }
 
+body.tizen-tv .nav-links {
+    gap: 36px;
+}
+
+body.tizen-tv .nav-link {
+    font-size: 21px;
+    font-weight: 600;
+    padding: 12px 24px;
+    border-radius: 10px;
+}
+
+body.tizen-tv .nav-link.focused {
+    background: #E50914 !important;
+    color: #FFFFFF !important;
+    transform: scale(1.15) !important;
+    outline: 3px solid #FFFFFF !important;
+    box-shadow: 0 0 25px rgba(229, 9, 20, 0.95) !important;
+    border-radius: 10px !important;
+}
+
+/* -------------------------------------------------------------------------
+   Hero Billboard (Upscaled for TV)
+   ------------------------------------------------------------------------- */
 body.tizen-tv .hero-billboard {
-    height: 70vh;
-    padding: 0 60px 80px;
+    height: 76vh;
+    min-height: 560px;
+    padding: 0 64px 80px;
 }
 
 body.tizen-tv .hero-title {
-    font-size: 54px;
+    font-size: 68px;
+    font-weight: 800;
+    line-height: 1.1;
+    margin-bottom: 20px;
+    text-shadow: 0 4px 30px rgba(0, 0, 0, 0.9);
+}
+
+body.tizen-tv .hero-overview {
+    font-size: 21px;
+    line-height: 1.6;
+    max-width: 950px;
+    margin-bottom: 30px;
+    -webkit-line-clamp: 3;
+}
+
+body.tizen-tv .hero-meta {
+    gap: 16px;
+    margin-bottom: 22px;
+}
+
+body.tizen-tv .badge {
+    font-size: 15px;
+    font-weight: 700;
+    padding: 6px 14px;
+    border-radius: 6px;
+}
+
+body.tizen-tv .hero-actions {
+    gap: 22px;
+}
+
+body.tizen-tv .hero-actions .btn {
+    font-size: 21px;
+    padding: 16px 38px;
+    border-radius: 12px;
+    gap: 12px;
+}
+
+/* -------------------------------------------------------------------------
+   Carousel Rows & Media Cards (Upscaled for TV)
+   ------------------------------------------------------------------------- */
+body.tizen-tv .carousel-rows {
+    margin-top: -50px;
+    padding-bottom: 80px;
 }
 
 body.tizen-tv .carousel-section {
-    padding: 0 60px;
+    padding: 0 64px;
+    margin-bottom: 48px;
 }
 
+body.tizen-tv .carousel-title {
+    font-size: 30px;
+    font-weight: 700;
+    margin-bottom: 20px;
+    letter-spacing: 0.5px;
+}
+
+body.tizen-tv .carousel-items {
+    gap: 26px;
+    padding: 24px 0;
+}
+
+/* TV Media Card - 240px wide by 360px tall for bold visibility */
 body.tizen-tv .media-card {
-    flex: 0 0 190px;
-    height: 285px;
+    flex: 0 0 240px;
+    height: 360px;
+    border-radius: 16px;
 }
 
-/* TV Player Controls Focus Rules */
+body.tizen-tv .card-overlay {
+    padding: 18px;
+    background: linear-gradient(180deg, transparent 35%, rgba(8, 8, 12, 0.96) 100%);
+}
+
+body.tizen-tv .card-match {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 6px;
+}
+
+body.tizen-tv .card-title {
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+/* -------------------------------------------------------------------------
+   Details Modal (Upscaled for TV)
+   ------------------------------------------------------------------------- */
+body.tizen-tv .modal-overlay {
+    padding: 40px 64px;
+}
+
+body.tizen-tv .modal-card {
+    max-width: 1300px;
+    max-height: 92vh;
+    border-radius: 24px;
+}
+
+body.tizen-tv .modal-backdrop-wrap {
+    height: 440px;
+}
+
+body.tizen-tv .modal-close-btn {
+    width: 54px;
+    height: 54px;
+    font-size: 26px;
+    top: 24px;
+    right: 24px;
+}
+
+body.tizen-tv .modal-body {
+    padding: 0 54px 54px;
+    margin-top: -80px;
+}
+
+body.tizen-tv .modal-title {
+    font-size: 50px;
+    font-weight: 800;
+    margin-bottom: 16px;
+}
+
+body.tizen-tv .modal-meta {
+    gap: 16px;
+    margin-bottom: 22px;
+}
+
+body.tizen-tv .modal-meta .badge {
+    font-size: 16px;
+    padding: 6px 14px;
+}
+
+body.tizen-tv .genre-tag {
+    font-size: 16px;
+    font-weight: 600;
+    padding: 6px 14px;
+    border-radius: 6px;
+}
+
+body.tizen-tv .modal-overview {
+    font-size: 21px;
+    line-height: 1.6;
+    max-width: 1050px;
+    margin-bottom: 32px;
+}
+
+body.tizen-tv .modal-actions {
+    gap: 22px;
+    margin-bottom: 38px;
+}
+
+body.tizen-tv .modal-actions .btn {
+    font-size: 21px;
+    padding: 16px 38px;
+    border-radius: 12px;
+}
+
+body.tizen-tv .seasons-title {
+    font-size: 26px;
+    margin-bottom: 18px;
+}
+
+body.tizen-tv .season-chips {
+    gap: 16px;
+    padding-bottom: 20px;
+}
+
+body.tizen-tv .season-chip {
+    font-size: 18px;
+    font-weight: 600;
+    padding: 12px 26px;
+    border-radius: 10px;
+}
+
+body.tizen-tv .season-chip.focused {
+    background: #E50914 !important;
+    color: #FFFFFF !important;
+    transform: scale(1.1) !important;
+    box-shadow: 0 0 25px rgba(229, 9, 20, 0.95) !important;
+    outline: 3px solid #FFFFFF !important;
+}
+
+body.tizen-tv .episodes-list {
+    gap: 18px;
+    margin-top: 20px;
+}
+
+body.tizen-tv .episode-card {
+    padding: 18px;
+    gap: 24px;
+    border-radius: 16px;
+}
+
+body.tizen-tv .episode-card.focused {
+    background: rgba(255, 255, 255, 0.16) !important;
+    transform: scale(1.03) !important;
+    outline: 3px solid #E50914 !important;
+    box-shadow: 0 0 25px rgba(229, 9, 20, 0.8) !important;
+}
+
+body.tizen-tv .episode-thumb-wrap {
+    width: 220px;
+    height: 124px;
+    border-radius: 10px;
+}
+
+body.tizen-tv .episode-play-icon {
+    font-size: 36px;
+}
+
+body.tizen-tv .episode-header {
+    font-size: 21px;
+    margin-bottom: 8px;
+}
+
+body.tizen-tv .episode-overview {
+    font-size: 17px;
+    line-height: 1.5;
+}
+
+/* -------------------------------------------------------------------------
+   Search View (Upscaled for TV)
+   ------------------------------------------------------------------------- */
+body.tizen-tv .view-container {
+    padding: 130px 64px 80px;
+}
+
+body.tizen-tv .search-bar-wrap {
+    max-width: 950px;
+    margin: 0 auto 54px;
+}
+
+body.tizen-tv .search-input {
+    height: 74px;
+    font-size: 26px;
+    padding: 18px 32px;
+    border-radius: 16px;
+}
+
+body.tizen-tv .search-input:focus,
+body.tizen-tv .search-input.focused {
+    border-color: #E50914 !important;
+    outline: 3px solid #FFFFFF !important;
+    box-shadow: 0 0 35px rgba(229, 9, 20, 0.9) !important;
+}
+
+body.tizen-tv .media-grid {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 32px;
+}
+
+body.tizen-tv .media-grid .media-card {
+    height: 360px;
+}
+
+body.tizen-tv .search-hint {
+    font-size: 22px;
+    margin-top: 80px;
+}
+
+/* -------------------------------------------------------------------------
+   Downloads & Watchlist (Upscaled for TV)
+   ------------------------------------------------------------------------- */
+body.tizen-tv .downloads-empty {
+    padding: 90px 20px;
+}
+
+body.tizen-tv .downloads-empty-icon {
+    font-size: 68px;
+}
+
+body.tizen-tv .downloads-empty h3 {
+    font-size: 30px;
+    margin-bottom: 12px;
+}
+
+body.tizen-tv .downloads-empty p {
+    font-size: 20px;
+}
+
+/* -------------------------------------------------------------------------
+   Online Cinema Stream Player Top HUD (Clean, unobtrusive, upscaled)
+   ------------------------------------------------------------------------- */
+body.tizen-tv .player-hud {
+    padding: 32px 54px;
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.9) 0%, transparent 100%);
+}
+
+body.tizen-tv .player-back-btn {
+    padding: 14px 28px;
+    font-size: 20px;
+    border-radius: 12px;
+}
+
+body.tizen-tv .player-title {
+    font-size: 30px;
+    font-weight: 800;
+}
+
+body.tizen-tv .player-subtitle {
+    font-size: 19px;
+    margin-top: 4px;
+}
+
+body.tizen-tv .player-servers {
+    gap: 14px;
+}
+
+body.tizen-tv .server-btn {
+    padding: 14px 24px;
+    font-size: 17px;
+    font-weight: 700;
+    border-radius: 10px;
+}
+
+body.tizen-tv .server-btn.focused {
+    background: #E50914 !important;
+    color: #FFFFFF !important;
+    transform: scale(1.12) !important;
+    outline: 3px solid #FFFFFF !important;
+    box-shadow: 0 0 25px rgba(229, 9, 20, 0.95) !important;
+}
+
+/* Native Offline Player Controls Focus */
 .native-ctrl-btn.focused {
     transform: scale(1.2) !important;
     border: 3px solid #ffffff !important;
@@ -102,12 +432,3 @@ body.tizen-tv .media-card {
     box-shadow: 0 0 30px rgba(229, 9, 20, 0.9) !important;
     outline: none !important;
 }
-
-.player-action-btn.focused {
-    transform: scale(1.12) !important;
-    border: 2px solid #ffffff !important;
-    background: #E50914 !important;
-    box-shadow: 0 0 20px rgba(229, 9, 20, 0.8) !important;
-    outline: none !important;
-}
-
