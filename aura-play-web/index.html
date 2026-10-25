@@ -223,6 +223,7 @@
                     <div class="sub-section-title">Select Subtitle Language</div>
                     <div class="sub-language-grid" id="sub-language-grid">
                         <button class="sub-lang-btn active focusable" tabindex="0" data-lang="off" onclick="Player.selectSubtitle('off')">Off (None)</button>
+                        <button class="sub-lang-btn focusable" tabindex="0" data-lang="ta" onclick="Player.selectSubtitle('ta')">Tamil (தமிழ்)</button>
                         <button class="sub-lang-btn focusable" tabindex="0" data-lang="en" onclick="Player.selectSubtitle('en')">English</button>
                         <button class="sub-lang-btn focusable" tabindex="0" data-lang="es" onclick="Player.selectSubtitle('es')">Spanish (Español)</button>
                         <button class="sub-lang-btn focusable" tabindex="0" data-lang="fr" onclick="Player.selectSubtitle('fr')">French (Français)</button>
@@ -249,13 +250,13 @@
                 <div class="audio-sub-body hidden" id="audio-tab-content">
                     <div class="sub-section-title">Select Audio Language &amp; Dub Track</div>
                     <div class="audio-lang-grid" id="audio-lang-grid">
-                        <button class="audio-lang-btn active focusable" tabindex="0" data-audio="original" onclick="Player.selectAudioTrack('original')">
+                        <button class="audio-lang-btn active focusable" tabindex="0" data-audio="ta" onclick="Player.selectAudioTrack('ta')">
+                            <span class="audio-lang-title">Tamil (தமிழ்)</span>
+                            <span class="audio-lang-desc">Default • Original / Dub</span>
+                        </button>
+                        <button class="audio-lang-btn focusable" tabindex="0" data-audio="original" onclick="Player.selectAudioTrack('original')">
                             <span class="audio-lang-title">Original Audio</span>
                             <span class="audio-lang-desc">Master 5.1 / Atmos</span>
-                        </button>
-                        <button class="audio-lang-btn focusable" tabindex="0" data-audio="ta" onclick="Player.selectAudioTrack('ta')">
-                            <span class="audio-lang-title">Tamil (தமிழ்)</span>
-                            <span class="audio-lang-desc">Original / Dub</span>
                         </button>
                         <button class="audio-lang-btn focusable" tabindex="0" data-audio="hi" onclick="Player.selectAudioTrack('hi')">
                             <span class="audio-lang-title">Hindi (हिंदी)</span>

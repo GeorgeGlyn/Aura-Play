@@ -19,7 +19,7 @@ const Player = {
 
     // Audio & Subtitles State
     isAudioSubModalOpen: false,
-    currentAudioTrack: localStorage.getItem("aura_audio") || "original",
+    currentAudioTrack: localStorage.getItem("aura_audio") || "ta",
     currentSubtitle: "off",
     subtitleOffset: 0.0,
     subtitleCues: [],
@@ -194,12 +194,15 @@ const Player = {
         const startSec = Math.floor(this.initialStartTime);
         const timeParam = startSec > 5 ? `&startAt=${startSec}&t=${startSec}` : "";
         const qualParam = (this.currentQuality && this.currentQuality !== "auto") ? `&quality=${this.currentQuality}` : "";
+        const audioParam = (this.currentAudioTrack && this.currentAudioTrack !== "original") 
+            ? `&audio=${this.currentAudioTrack}&lang=${this.currentAudioTrack}` 
+            : "";
 
         switch (this.currentServer) {
             case "vidlink":
                 url = isTv 
-                    ? `https://vidlink.pro/tv/${id}/${s}/${e}?autoplay=true&primaryColor=E50914${timeParam}${qualParam}`
-                    : `https://vidlink.pro/movie/${id}?autoplay=true&primaryColor=E50914${timeParam}${qualParam}`;
+                    ? `https://vidlink.pro/tv/${id}/${s}/${e}?autoplay=true&primaryColor=E50914${timeParam}${qualParam}${audioParam}`
+                    : `https://vidlink.pro/movie/${id}?autoplay=true&primaryColor=E50914${timeParam}${qualParam}${audioParam}`;
                 break;
             case "twoembed":
                 url = isTv 
@@ -729,6 +732,7 @@ const Player = {
 
     getLanguageDisplayName(code) {
         const names = {
+            "ta": "Tamil (தமிழ்)",
             "en": "English",
             "es": "Spanish",
             "fr": "French",
