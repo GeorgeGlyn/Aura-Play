@@ -710,10 +710,12 @@ body {
 
 .server-btn.focused,
 .server-btn:focus {
-    transform: scale(1.1);
+    transform: scale(1.15) !important;
     border-color: #fff !important;
-    outline: 2px solid #E50914 !important;
-    box-shadow: 0 0 20px rgba(229, 9, 20, 0.9) !important;
+    outline: 3px solid #ffffff !important;
+    outline-offset: 2px !important;
+    box-shadow: 0 0 25px rgba(255, 255, 255, 0.9) !important;
+    z-index: 10;
 }
 
 .player-hud-right {
@@ -1002,6 +1004,93 @@ body {
 }
 
 .audio-card-status {
+    font-size: 14px;
+    font-weight: 700;
+    color: #4CAF50;
+}
+
+/* Video Quality Selector Styles */
+.quality-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.quality-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 24px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.quality-card.active {
+    border-color: rgba(229, 9, 20, 0.7);
+    background: rgba(229, 9, 20, 0.15);
+}
+
+.quality-card.focused {
+    background: rgba(229, 9, 20, 0.25) !important;
+    border-color: #fff !important;
+    outline: 3px solid #FFFFFF !important;
+    transform: scale(1.02);
+    box-shadow: 0 0 25px rgba(229, 9, 20, 0.8) !important;
+}
+
+.quality-card-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.quality-badge {
+    background: rgba(255, 255, 255, 0.15);
+    color: #fff;
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+}
+
+.quality-badge.auto {
+    background: linear-gradient(135deg, #E50914, #B81D24);
+}
+
+.quality-badge.uhd {
+    background: linear-gradient(135deg, #FFD700, #FFA500);
+    color: #000;
+}
+
+.quality-badge.fhd {
+    background: linear-gradient(135deg, #00C0FF, #0077FE);
+}
+
+.quality-badge.hd {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.quality-badge.sd {
+    background: rgba(255, 255, 255, 0.12);
+    color: #aaa;
+}
+
+.quality-card-info h4 {
+    font-size: 17px;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+
+.quality-card-info p {
+    font-size: 13px;
+    color: #aaa;
+}
+
+.quality-status {
     font-size: 14px;
     font-weight: 700;
     color: #4CAF50;

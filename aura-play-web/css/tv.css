@@ -417,11 +417,32 @@ body.tizen-tv .server-btn {
 }
 
 body.tizen-tv .server-btn.focused {
-    background: #E50914 !important;
-    color: #FFFFFF !important;
-    transform: scale(1.12) !important;
-    outline: 3px solid #FFFFFF !important;
-    box-shadow: 0 0 25px rgba(229, 9, 20, 0.95) !important;
+    transform: scale(1.18) !important;
+    outline: 4px solid #FFFFFF !important;
+    outline-offset: 3px !important;
+    box-shadow: 0 0 35px rgba(255, 255, 255, 0.95) !important;
+    z-index: 10;
+}
+
+body.tizen-tv .quality-card {
+    padding: 22px 30px;
+}
+
+body.tizen-tv .quality-card-info h4 {
+    font-size: 24px;
+}
+
+body.tizen-tv .quality-card-info p {
+    font-size: 17px;
+}
+
+body.tizen-tv .quality-badge {
+    font-size: 16px;
+    padding: 8px 18px;
+}
+
+body.tizen-tv .quality-status {
+    font-size: 18px;
 }
 
 body.tizen-tv .player-toast {

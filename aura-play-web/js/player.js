@@ -13,6 +13,10 @@ const Player = {
     duration: 0,
     lastSavedPos: 0,
 
+    // Video Quality State
+    currentQuality: localStorage.getItem("aura_quality") || "auto",
+    qualityBtnEl: null,
+
     // Audio & Subtitles State
     isAudioSubModalOpen: false,
     currentSubtitle: "off",
@@ -33,6 +37,9 @@ const Player = {
         this.subtitleCueText = document.getElementById("subtitle-cue-text");
         this.audioSubModal = document.getElementById("audio-sub-modal");
         this.subtitleOffsetVal = document.getElementById("subtitle-offset-val");
+        this.qualityBtnEl = document.getElementById("player-quality-btn");
+
+        this.updateQualityDisplay();
 
         // Activity monitor to auto-hide HUD
         window.addEventListener("mousemove", () => {
@@ -184,22 +191,23 @@ const Player = {
         const e = episode || 1;
         const startSec = Math.floor(this.initialStartTime);
         const timeParam = startSec > 5 ? `&startAt=${startSec}&t=${startSec}` : "";
+        const qualParam = (this.currentQuality && this.currentQuality !== "auto") ? `&quality=${this.currentQuality}` : "";
 
         switch (this.currentServer) {
-            case "moviesapi":
+            case "vidlink":
                 url = isTv 
-                    ? `https://player.moviesapi.vip/tv/${id}/${s}/${e}`
-                    : `https://player.moviesapi.vip/movie/${id}`;
+                    ? `https://vidlink.pro/tv/${id}/${s}/${e}?autoplay=true&primaryColor=E50914${timeParam}${qualParam}`
+                    : `https://vidlink.pro/movie/${id}?autoplay=true&primaryColor=E50914${timeParam}${qualParam}`;
                 break;
             case "twoembed":
                 url = isTv 
-                    ? `https://www.2embed.skin/embed/tv/${id}/${s}/${e}`
-                    : `https://www.2embed.skin/embed/${id}`;
+                    ? `https://www.2embed.cc/embedtv/${id}&s=${s}&e=${e}`
+                    : `https://www.2embed.cc/embed/${id}`;
                 break;
-            case "vidlink":
+            case "vidsrc_su":
                 url = isTv 
-                    ? `https://vidlink.pro/tv/${id}/${s}/${e}?autoplay=true&primaryColor=E50914${timeParam}`
-                    : `https://vidlink.pro/movie/${id}?autoplay=true&primaryColor=E50914${timeParam}`;
+                    ? `https://vidsrc.su/embed/tv/${id}/${s}/${e}`
+                    : `https://vidsrc.su/embed/movie/${id}`;
                 break;
             case "vidsrc_pm":
             default:
@@ -209,7 +217,7 @@ const Player = {
                 break;
         }
 
-        console.log(`[Player] Loading stream (${this.currentServer}): ${url} (startAt: ${startSec}s)`);
+        console.log(`[Player] Loading stream (${this.currentServer}): ${url} (startAt: ${startSec}s, quality: ${this.currentQuality})`);
         this.frame.removeAttribute("sandbox");
         this.frame.src = url;
         this.isPaused = false;
@@ -240,9 +248,9 @@ const Player = {
     getServerDisplayName(key) {
         switch (key) {
             case "vidsrc_pm": return "Server 1 (VidSrc)";
-            case "moviesapi": return "Server 2 (MoviesAPI)";
+            case "vidlink": return "Server 2 (VidLink Pro)";
             case "twoembed": return "Server 3 (2Embed)";
-            case "vidlink": return "Server 4 (VidLink)";
+            case "vidsrc_su": return "Server 4 (VidSrc SU)";
             default: return "Server";
         }
     },
@@ -250,9 +258,9 @@ const Player = {
     updateServerButtons() {
         const serverMap = {
             "vidsrc_pm": document.getElementById("server-btn-vidsrcpm"),
-            "moviesapi": document.getElementById("server-btn-moviesapi"),
+            "vidlink": document.getElementById("server-btn-vidlink"),
             "twoembed": document.getElementById("server-btn-twoembed"),
-            "vidlink": document.getElementById("server-btn-vidlink")
+            "vidsrc_su": document.getElementById("server-btn-vidsrcsu")
         };
         for (const key in serverMap) {
             const btn = serverMap[key];
@@ -264,6 +272,29 @@ const Player = {
                 }
             }
         }
+        this.updateAudioServerStatuses();
+    },
+
+    updateAudioServerStatuses() {
+        const cards = [
+            { id: "audio-card-vidsrcpm", statusId: "status-vidsrcpm", key: "vidsrc_pm" },
+            { id: "audio-card-vidlink", statusId: "status-vidlink", key: "vidlink" },
+            { id: "audio-card-twoembed", statusId: "status-twoembed", key: "twoembed" },
+            { id: "audio-card-vidsrcsu", statusId: "status-vidsrcsu", key: "vidsrc_su" }
+        ];
+
+        cards.forEach(c => {
+            const cardEl = document.getElementById(c.id);
+            const statusEl = document.getElementById(c.statusId);
+            const isActive = (c.key === this.currentServer);
+            if (cardEl) {
+                if (isActive) cardEl.classList.add("active");
+                else cardEl.classList.remove("active");
+            }
+            if (statusEl) {
+                statusEl.textContent = isActive ? "Active" : "";
+            }
+        });
     },
 
     triggerInitialPlay() {
@@ -418,7 +449,7 @@ const Player = {
         }, 1400);
     },
 
-    showHudTemporarily() {
+    showHudTemporarily(duration = 5000) {
         if (!this.isOpen || this.isAudioSubModalOpen) return;
         if (this.hud) {
             this.hud.classList.remove("fade-out");
@@ -428,9 +459,20 @@ const Player = {
         clearTimeout(this.hideTimeout);
         this.hideTimeout = setTimeout(() => {
             if (this.isOpen && !this.isAudioSubModalOpen) {
-                this.hideHud();
+                // If user is currently focused on any top HUD button, don't suddenly hide
+                const isHudFocused = window.Navigation && window.Navigation.currentFocus &&
+                    (window.Navigation.currentFocus.id === "player-back-btn" || 
+                     window.Navigation.currentFocus.id === "player-audio-sub-btn" ||
+                     window.Navigation.currentFocus.id === "player-quality-btn" ||
+                     window.Navigation.currentFocus.classList.contains("server-btn"));
+                if (!isHudFocused) {
+                    this.hideHud();
+                } else {
+                    // Refresh HUD once more if user was navigating
+                    this.showHudTemporarily(4000);
+                }
             }
-        }, 3500);
+        }, duration);
     },
 
     hideHud() {
@@ -442,31 +484,31 @@ const Player = {
         const isHudFocused = window.Navigation && window.Navigation.currentFocus &&
             (window.Navigation.currentFocus.id === "player-back-btn" || 
              window.Navigation.currentFocus.id === "player-audio-sub-btn" ||
+             window.Navigation.currentFocus.id === "player-quality-btn" ||
              window.Navigation.currentFocus.classList.contains("server-btn"));
         if (isHudFocused && window.Navigation) {
             window.Navigation.currentFocus.classList.remove("focused");
             window.Navigation.currentFocus.blur();
             window.Navigation.currentFocus = null;
         }
+        if (this.container) {
+            this.container.focus();
+        }
     },
 
     // -------------------------------------------------------------
-    // Audio & Subtitles Menu and On-Screen Display Engine
+    // Audio, Subtitles & Quality Menu and On-Screen Display Engine
     // -------------------------------------------------------------
 
-    openAudioSubModal() {
+    openAudioSubModal(defaultTab = "subtitles") {
         this.isAudioSubModalOpen = true;
         this.hideHud();
         if (this.audioSubModal) {
             this.audioSubModal.classList.remove("hidden");
         }
         this.updateAudioServerStatuses();
-
-        // Focus first tab
-        const firstTab = document.getElementById("tab-subtitles");
-        if (firstTab && window.Navigation) {
-            window.Navigation.setFocus(firstTab);
-        }
+        this.updateQualityDisplay();
+        this.switchAudioSubTab(defaultTab);
     },
 
     closeAudioSubModal() {
@@ -474,31 +516,138 @@ const Player = {
         if (this.audioSubModal) {
             this.audioSubModal.classList.add("hidden");
         }
-        // Return focus to Audio & Subtitles button in HUD
+        // Return focus to corresponding button in HUD
         this.showHudTemporarily();
-        const audioBtn = document.getElementById("player-audio-sub-btn");
-        if (audioBtn && window.Navigation) {
-            window.Navigation.setFocus(audioBtn);
+        const targetBtn = document.getElementById("player-audio-sub-btn") || document.getElementById("player-back-btn");
+        if (targetBtn && window.Navigation) {
+            window.Navigation.setFocus(targetBtn);
         }
     },
 
     switchAudioSubTab(tabName) {
         const subTab = document.getElementById("tab-subtitles");
         const audioTab = document.getElementById("tab-audio");
+        const qualityTab = document.getElementById("tab-quality");
+
         const subContent = document.getElementById("subtitles-tab-content");
         const audioContent = document.getElementById("audio-tab-content");
+        const qualityContent = document.getElementById("quality-tab-content");
 
-        if (tabName === "subtitles") {
-            if (subTab) subTab.classList.add("active");
-            if (audioTab) audioTab.classList.remove("active");
-            if (subContent) subContent.classList.remove("hidden");
-            if (audioContent) audioContent.classList.add("hidden");
-        } else {
+        if (subTab) subTab.classList.remove("active");
+        if (audioTab) audioTab.classList.remove("active");
+        if (qualityTab) qualityTab.classList.remove("active");
+
+        if (subContent) subContent.classList.add("hidden");
+        if (audioContent) audioContent.classList.add("hidden");
+        if (qualityContent) qualityContent.classList.add("hidden");
+
+        if (tabName === "quality") {
+            if (qualityTab) qualityTab.classList.add("active");
+            if (qualityContent) qualityContent.classList.remove("hidden");
+            const activeCard = document.querySelector(".quality-card.active") || qualityTab;
+            if (activeCard && window.Navigation) {
+                window.Navigation.setFocus(activeCard);
+            }
+        } else if (tabName === "audio") {
             if (audioTab) audioTab.classList.add("active");
-            if (subTab) subTab.classList.remove("active");
             if (audioContent) audioContent.classList.remove("hidden");
-            if (subContent) subContent.classList.add("hidden");
+            const activeCard = document.querySelector(".audio-server-card.active") || audioTab;
+            if (activeCard && window.Navigation) {
+                window.Navigation.setFocus(activeCard);
+            }
+        } else {
+            if (subTab) subTab.classList.add("active");
+            if (subContent) subContent.classList.remove("hidden");
+            const activeBtn = document.querySelector(".sub-lang-btn.active") || subTab;
+            if (activeBtn && window.Navigation) {
+                window.Navigation.setFocus(activeBtn);
+            }
         }
+    },
+
+    getQualityDisplayName(key) {
+        switch (key) {
+            case "2160": return "4K Ultra HD (2160p)";
+            case "1080": return "Full HD (1080p)";
+            case "720": return "HD (720p)";
+            case "480": return "SD (480p)";
+            case "auto":
+            default:
+                return "Auto (Adaptive)";
+        }
+    },
+
+    getQualityShortLabel(key) {
+        switch (key) {
+            case "2160": return "4K";
+            case "1080": return "1080p";
+            case "720": return "720p";
+            case "480": return "480p";
+            case "auto":
+            default:
+                return "Auto";
+        }
+    },
+
+    selectQuality(qualityKey) {
+        this.currentQuality = qualityKey;
+        try {
+            localStorage.setItem("aura_quality", qualityKey);
+        } catch (e) {}
+
+        this.updateQualityDisplay();
+        const displayName = this.getQualityDisplayName(qualityKey);
+        this.showToast(`⚙ Resolution: ${displayName}`);
+
+        // Try postMessage to active stream player
+        if (this.frame && this.frame.contentWindow) {
+            try {
+                this.frame.contentWindow.postMessage({ action: "setQuality", quality: qualityKey }, "*");
+                this.frame.contentWindow.postMessage({ type: "SET_QUALITY", quality: qualityKey }, "*");
+                this.frame.contentWindow.postMessage({ quality: qualityKey }, "*");
+            } catch (e) {}
+        }
+
+        // If on VidLink or server that takes quality param in URL, refresh stream cleanly carrying over elapsed time
+        if (this.currentServer === "vidlink") {
+            const elapsed = this.currentTime > 0
+                ? this.currentTime
+                : Math.floor((Date.now() - this.playStartTime) / 1000) + (this.initialStartTime || 0);
+            this.initialStartTime = elapsed;
+            this.currentTime = elapsed;
+            this.playStartTime = Date.now();
+            this.loadStreamUrl();
+        }
+
+        // Auto close modal smoothly so viewer sees their chosen stream
+        setTimeout(() => {
+            if (this.isAudioSubModalOpen) {
+                this.closeAudioSubModal();
+            }
+        }, 350);
+    },
+
+    updateQualityDisplay() {
+        if (!this.qualityBtnEl) {
+            this.qualityBtnEl = document.getElementById("player-quality-btn");
+        }
+        if (this.qualityBtnEl) {
+            this.qualityBtnEl.textContent = `⚙ Quality: ${this.getQualityShortLabel(this.currentQuality)}`;
+        }
+
+        const qualityKeys = ["auto", "2160", "1080", "720", "480"];
+        qualityKeys.forEach(k => {
+            const cardEl = document.getElementById(`quality-card-${k}`);
+            const statusEl = document.getElementById(`status-quality-${k}`);
+            const isActive = (k === this.currentQuality);
+            if (cardEl) {
+                if (isActive) cardEl.classList.add("active");
+                else cardEl.classList.remove("active");
+            }
+            if (statusEl) {
+                statusEl.textContent = isActive ? "Active" : "";
+            }
+        });
     },
 
     selectSubtitle(lang) {
@@ -658,27 +807,6 @@ const Player = {
         this.updateSubtitleCue();
         const prefix = this.subtitleOffset > 0 ? "+" : "";
         this.showToast(`Subtitle Delay: ${prefix}${this.subtitleOffset.toFixed(1)}s`);
-    },
-
-    updateAudioServerStatuses() {
-        const statuses = {
-            "vidsrc_pm": document.getElementById("status-vidsrc"),
-            "vidlink": document.getElementById("status-vidlink"),
-            "moviesapi": document.getElementById("status-moviesapi"),
-            "twoembed": document.getElementById("status-twoembed")
-        };
-
-        for (const key in statuses) {
-            const el = statuses[key];
-            if (el) {
-                if (key === this.currentServer) {
-                    el.textContent = "Active";
-                    el.style.color = "#4CAF50";
-                } else {
-                    el.textContent = "";
-                }
-            }
-        }
     },
 
     close() {

@@ -124,6 +124,7 @@ const Navigation = {
             const isTopHudFocused = this.currentFocus && 
                 (this.currentFocus.id === "player-back-btn" || 
                  this.currentFocus.id === "player-audio-sub-btn" ||
+                 this.currentFocus.id === "player-quality-btn" ||
                  this.currentFocus.classList.contains("server-btn"));
 
             if (keyCode === 13 || keyCode === 32) { // OK / Enter / Space
@@ -136,12 +137,15 @@ const Navigation = {
                 return;
             }
 
-            if (keyCode === 38) { // Up -> Reveal Top HUD & Focus Audio & Subtitles or Back button
+            if (keyCode === 38) { // Up -> Reveal Top HUD & Focus active server / quality button
                 e.preventDefault();
+                window.Player.showHudTemporarily();
                 if (!isTopHudFocused) {
-                    window.Player.showHudTemporarily();
-                    const targetBtn = document.getElementById("player-audio-sub-btn") || document.getElementById("player-back-btn");
-                    if (targetBtn) this.setFocus(targetBtn);
+                    const activeServer = document.querySelector(".server-btn.active") || 
+                                         document.getElementById("player-quality-btn") ||
+                                         document.getElementById("player-audio-sub-btn") ||
+                                         document.getElementById("player-back-btn");
+                    if (activeServer) this.setFocus(activeServer);
                 }
                 return;
             } else if (keyCode === 40) { // Down -> Hide Top HUD, return to clean video viewing
@@ -153,13 +157,15 @@ const Navigation = {
             } else if (keyCode === 37) { // Left -> Seek -10s or navigate Top HUD
                 e.preventDefault();
                 if (isTopHudFocused) {
+                    window.Player.showHudTemporarily();
                     const hudButtons = [
                         document.getElementById("player-back-btn"),
                         document.getElementById("player-audio-sub-btn"),
+                        document.getElementById("player-quality-btn"),
                         document.getElementById("server-btn-vidsrcpm"),
-                        document.getElementById("server-btn-moviesapi"),
+                        document.getElementById("server-btn-vidlink"),
                         document.getElementById("server-btn-twoembed"),
-                        document.getElementById("server-btn-vidlink")
+                        document.getElementById("server-btn-vidsrcsu")
                     ].filter(Boolean);
                     const idx = hudButtons.indexOf(this.currentFocus);
                     if (idx > 0) {
@@ -172,13 +178,15 @@ const Navigation = {
             } else if (keyCode === 39) { // Right -> Seek +10s or navigate Top HUD
                 e.preventDefault();
                 if (isTopHudFocused) {
+                    window.Player.showHudTemporarily();
                     const hudButtons = [
                         document.getElementById("player-back-btn"),
                         document.getElementById("player-audio-sub-btn"),
+                        document.getElementById("player-quality-btn"),
                         document.getElementById("server-btn-vidsrcpm"),
-                        document.getElementById("server-btn-moviesapi"),
+                        document.getElementById("server-btn-vidlink"),
                         document.getElementById("server-btn-twoembed"),
-                        document.getElementById("server-btn-vidlink")
+                        document.getElementById("server-btn-vidsrcsu")
                     ].filter(Boolean);
                     const idx = hudButtons.indexOf(this.currentFocus);
                     if (idx >= 0 && idx < hudButtons.length - 1) {

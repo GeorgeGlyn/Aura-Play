@@ -174,25 +174,29 @@
                 <div class="player-subtitle" id="player-subtitle">Season 1 • Episode 1</div>
             </div>
             <div class="player-hud-right">
-                <button class="player-action-btn focusable" tabindex="0" id="player-audio-sub-btn" onclick="Player.openAudioSubModal()">
+                <button class="player-action-btn focusable" tabindex="0" id="player-audio-sub-btn" onclick="Player.openAudioSubModal('subtitles')">
                     💬 Audio &amp; Subtitles
+                </button>
+                <button class="player-action-btn focusable" tabindex="0" id="player-quality-btn" onclick="Player.openAudioSubModal('quality')">
+                    ⚙ Quality: Auto
                 </button>
                 <div class="player-servers" id="player-servers">
                     <button class="server-btn focusable active" tabindex="0" id="server-btn-vidsrcpm" onclick="Player.switchServer('vidsrc_pm')">Server 1</button>
-                    <button class="server-btn focusable" tabindex="0" id="server-btn-moviesapi" onclick="Player.switchServer('moviesapi')">Server 2</button>
+                    <button class="server-btn focusable" tabindex="0" id="server-btn-vidlink" onclick="Player.switchServer('vidlink')">Server 2</button>
                     <button class="server-btn focusable" tabindex="0" id="server-btn-twoembed" onclick="Player.switchServer('twoembed')">Server 3</button>
-                    <button class="server-btn focusable" tabindex="0" id="server-btn-vidlink" onclick="Player.switchServer('vidlink')">Server 4</button>
+                    <button class="server-btn focusable" tabindex="0" id="server-btn-vidsrcsu" onclick="Player.switchServer('vidsrc_su')">Server 4</button>
                 </div>
             </div>
         </div>
 
-        <!-- Audio & Subtitles TV Sheet Modal -->
+        <!-- Audio, Subtitles & Quality TV Sheet Modal -->
         <div class="audio-sub-modal-overlay hidden" id="audio-sub-modal">
             <div class="audio-sub-card">
                 <div class="audio-sub-header">
                     <div class="audio-sub-tabs">
                         <button class="audio-sub-tab active focusable" id="tab-subtitles" tabindex="0" onclick="Player.switchAudioSubTab('subtitles')">💬 Subtitles</button>
                         <button class="audio-sub-tab focusable" id="tab-audio" tabindex="0" onclick="Player.switchAudioSubTab('audio')">🔊 Audio &amp; Servers</button>
+                        <button class="audio-sub-tab focusable" id="tab-quality" tabindex="0" onclick="Player.switchAudioSubTab('quality')">⚙ Quality</button>
                     </div>
                     <button class="audio-sub-close focusable" id="audio-sub-close-btn" tabindex="0" onclick="Player.closeAudioSubModal()">✕</button>
                 </div>
@@ -228,7 +232,7 @@
                 <div class="audio-sub-body hidden" id="audio-tab-content">
                     <div class="sub-section-title">Select Audio Stream / Server</div>
                     <div class="audio-server-list">
-                        <div class="audio-server-card focusable" id="audio-card-vidsrc" tabindex="0" onclick="Player.switchServer('vidsrc_pm'); Player.closeAudioSubModal();">
+                        <div class="audio-server-card focusable" id="audio-card-vidsrcpm" tabindex="0" onclick="Player.switchServer('vidsrc_pm'); Player.closeAudioSubModal();">
                             <div class="audio-card-left">
                                 <span class="audio-card-badge">Server 1</span>
                                 <div class="audio-card-info">
@@ -236,11 +240,11 @@
                                     <p>Original Audio (Dolby Atmos / 5.1) • Multi-Subtitles</p>
                                 </div>
                             </div>
-                            <span class="audio-card-status" id="status-vidsrc">Active</span>
+                            <span class="audio-card-status" id="status-vidsrcpm">Active</span>
                         </div>
                         <div class="audio-server-card focusable" id="audio-card-vidlink" tabindex="0" onclick="Player.switchServer('vidlink'); Player.closeAudioSubModal();">
                             <div class="audio-card-left">
-                                <span class="audio-card-badge">Server 4</span>
+                                <span class="audio-card-badge">Server 2</span>
                                 <div class="audio-card-info">
                                     <h4>VidLink Pro</h4>
                                     <p>Multi-Audio Dubs &amp; External Subtitle Engine</p>
@@ -248,25 +252,82 @@
                             </div>
                             <span class="audio-card-status" id="status-vidlink"></span>
                         </div>
-                        <div class="audio-server-card focusable" id="audio-card-moviesapi" tabindex="0" onclick="Player.switchServer('moviesapi'); Player.closeAudioSubModal();">
-                            <div class="audio-card-left">
-                                <span class="audio-card-badge">Server 2</span>
-                                <div class="audio-card-info">
-                                    <h4>MoviesAPI Ultra</h4>
-                                    <p>Alternative High-Speed Audio Stream</p>
-                                </div>
-                            </div>
-                            <span class="audio-card-status" id="status-moviesapi"></span>
-                        </div>
                         <div class="audio-server-card focusable" id="audio-card-twoembed" tabindex="0" onclick="Player.switchServer('twoembed'); Player.closeAudioSubModal();">
                             <div class="audio-card-left">
                                 <span class="audio-card-badge">Server 3</span>
                                 <div class="audio-card-info">
                                     <h4>2Embed Mirror</h4>
-                                    <p>Backup Cinema Stream &amp; Audio</p>
+                                    <p>Fast Backup Cinema Stream &amp; Alternate Audio</p>
                                 </div>
                             </div>
                             <span class="audio-card-status" id="status-twoembed"></span>
+                        </div>
+                        <div class="audio-server-card focusable" id="audio-card-vidsrcsu" tabindex="0" onclick="Player.switchServer('vidsrc_su'); Player.closeAudioSubModal();">
+                            <div class="audio-card-left">
+                                <span class="audio-card-badge">Server 4</span>
+                                <div class="audio-card-info">
+                                    <h4>VidSrc SU</h4>
+                                    <p>High-Bitrate Direct Cinema Mirror</p>
+                                </div>
+                            </div>
+                            <span class="audio-card-status" id="status-vidsrcsu"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Video Quality Tab Content -->
+                <div class="audio-sub-body hidden" id="quality-tab-content">
+                    <div class="sub-section-title">Select Video Stream Resolution</div>
+                    <div class="quality-grid" id="quality-grid">
+                        <div class="quality-card active focusable" id="quality-card-auto" tabindex="0" onclick="Player.selectQuality('auto');">
+                            <div class="quality-card-left">
+                                <span class="quality-badge auto">AUTO</span>
+                                <div class="quality-card-info">
+                                    <h4>Auto (Adaptive Cinema)</h4>
+                                    <p>Automatically selects optimal resolution up to 4K based on your connection</p>
+                                </div>
+                            </div>
+                            <span class="quality-status" id="status-quality-auto">Active</span>
+                        </div>
+                        <div class="quality-card focusable" id="quality-card-2160" tabindex="0" onclick="Player.selectQuality('2160');">
+                            <div class="quality-card-left">
+                                <span class="quality-badge uhd">4K UHD</span>
+                                <div class="quality-card-info">
+                                    <h4>4K Ultra HD (2160p)</h4>
+                                    <p>Cinema master quality with enhanced bitrate</p>
+                                </div>
+                            </div>
+                            <span class="quality-status" id="status-quality-2160"></span>
+                        </div>
+                        <div class="quality-card focusable" id="quality-card-1080" tabindex="0" onclick="Player.selectQuality('1080');">
+                            <div class="quality-card-left">
+                                <span class="quality-badge fhd">1080p</span>
+                                <div class="quality-card-info">
+                                    <h4>Full HD (1080p)</h4>
+                                    <p>Crystal clear 1080p stream • Ideal for most TVs</p>
+                                </div>
+                            </div>
+                            <span class="quality-status" id="status-quality-1080"></span>
+                        </div>
+                        <div class="quality-card focusable" id="quality-card-720" tabindex="0" onclick="Player.selectQuality('720');">
+                            <div class="quality-card-left">
+                                <span class="quality-badge hd">720p</span>
+                                <div class="quality-card-info">
+                                    <h4>HD (720p)</h4>
+                                    <p>Balanced bandwidth and fast buffering</p>
+                                </div>
+                            </div>
+                            <span class="quality-status" id="status-quality-720"></span>
+                        </div>
+                        <div class="quality-card focusable" id="quality-card-480" tabindex="0" onclick="Player.selectQuality('480');">
+                            <div class="quality-card-left">
+                                <span class="quality-badge sd">480p</span>
+                                <div class="quality-card-info">
+                                    <h4>SD (480p)</h4>
+                                    <p>Data saver mode for slower network connections</p>
+                                </div>
+                            </div>
+                            <span class="quality-status" id="status-quality-480"></span>
                         </div>
                     </div>
                 </div>
