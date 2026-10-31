@@ -162,7 +162,7 @@
     </div>
 
     <!-- Fullscreen Cinema Player -->
-    <div class="player-container hidden" id="player-container">
+    <div class="player-container hidden" id="player-container" tabindex="-1">
         <iframe id="player-frame" 
                 class="player-frame" 
                 tabindex="-1"
@@ -181,6 +181,11 @@
             <span class="subtitle-cue-text" id="subtitle-cue-text"></span>
         </div>
         
+        <!-- Floating Unmute Banner if Web Player starts muted -->
+        <button class="player-unmute-banner hidden focusable" id="player-unmute-banner" tabindex="0" onclick="Player.unmute()">
+            🔇 Audio is Muted in Web Player — Click / Press OK to Unmute (🔊 100%)
+        </button>
+
         <!-- Top HUD -->
         <div class="player-hud" id="player-hud">
             <button class="player-back-btn focusable" tabindex="0" id="player-back-btn" onclick="Player.close()">
@@ -196,6 +201,9 @@
                 </button>
                 <button class="player-action-btn focusable" tabindex="0" id="player-quality-btn" onclick="Player.openAudioSubModal('quality')">
                     ⚙ Quality: Auto
+                </button>
+                <button class="player-action-btn focusable" tabindex="0" id="player-volume-btn" onclick="Player.toggleMute()">
+                    🔊 100%
                 </button>
                 <div class="player-servers" id="player-servers">
                     <button class="server-btn focusable active" tabindex="0" id="server-btn-vidsrcpm" onclick="Player.switchServer('vidsrc_pm')">Server 1</button>
@@ -280,9 +288,29 @@
                         </button>
                     </div>
 
+                    <div class="sub-section-title" style="margin-top: 24px;">TV Master Volume &amp; Stream Audio Control</div>
+                    <div class="audio-volume-controls" id="audio-volume-controls">
+                        <button type="button" class="audio-vol-btn focusable" id="btn-vol-tv-down" tabindex="0" onclick="Player.adjustTvVolume(-1)">
+                            <span class="vol-icon">🔉</span>
+                            <span class="vol-label">TV Vol -</span>
+                        </button>
+                        <button type="button" class="audio-vol-btn focusable" id="btn-vol-tv-up" tabindex="0" onclick="Player.adjustTvVolume(1)">
+                            <span class="vol-icon">🔊</span>
+                            <span class="vol-label" id="btn-vol-tv-label">TV Vol +</span>
+                        </button>
+                        <button type="button" class="audio-vol-btn focusable active" id="btn-vol-100" tabindex="0" onclick="Player.setVolume(1.0)">
+                            <span class="vol-icon">⚡</span>
+                            <span class="vol-label">Stream 100%</span>
+                        </button>
+                        <button type="button" class="audio-vol-btn focusable" id="btn-vol-mute" tabindex="0" onclick="Player.toggleMute()">
+                            <span class="vol-icon" id="btn-vol-mute-icon">🔇</span>
+                            <span class="vol-label" id="btn-vol-mute-label">Mute</span>
+                        </button>
+                    </div>
+
                     <div class="sub-section-title" style="margin-top: 24px;">Streaming Server &amp; Multi-Audio Engine</div>
                     <div class="audio-server-list">
-                        <div class="audio-server-card focusable" id="audio-card-vidsrcpm" tabindex="0" onclick="Player.switchServer('vidsrc_pm'); Player.closeAudioSubModal();">
+                        <button type="button" class="audio-server-card focusable" id="audio-card-vidsrcpm" tabindex="0" onclick="Player.switchServer('vidsrc_pm'); Player.closeAudioSubModal();">
                             <div class="audio-card-left">
                                 <span class="audio-card-badge">Server 1</span>
                                 <div class="audio-card-info">
@@ -291,8 +319,8 @@
                                 </div>
                             </div>
                             <span class="audio-card-status" id="status-vidsrcpm">Active</span>
-                        </div>
-                        <div class="audio-server-card focusable" id="audio-card-vidlink" tabindex="0" onclick="Player.switchServer('vidlink'); Player.closeAudioSubModal();">
+                        </button>
+                        <button type="button" class="audio-server-card focusable" id="audio-card-vidlink" tabindex="0" onclick="Player.switchServer('vidlink'); Player.closeAudioSubModal();">
                             <div class="audio-card-left">
                                 <span class="audio-card-badge">Server 2</span>
                                 <div class="audio-card-info">
@@ -301,8 +329,8 @@
                                 </div>
                             </div>
                             <span class="audio-card-status" id="status-vidlink"></span>
-                        </div>
-                        <div class="audio-server-card focusable" id="audio-card-twoembed" tabindex="0" onclick="Player.switchServer('twoembed'); Player.closeAudioSubModal();">
+                        </button>
+                        <button type="button" class="audio-server-card focusable" id="audio-card-twoembed" tabindex="0" onclick="Player.switchServer('twoembed'); Player.closeAudioSubModal();">
                             <div class="audio-card-left">
                                 <span class="audio-card-badge">Server 3</span>
                                 <div class="audio-card-info">
@@ -311,8 +339,8 @@
                                 </div>
                             </div>
                             <span class="audio-card-status" id="status-twoembed"></span>
-                        </div>
-                        <div class="audio-server-card focusable" id="audio-card-vidsrcsu" tabindex="0" onclick="Player.switchServer('vidsrc_su'); Player.closeAudioSubModal();">
+                        </button>
+                        <button type="button" class="audio-server-card focusable" id="audio-card-vidsrcsu" tabindex="0" onclick="Player.switchServer('vidsrc_su'); Player.closeAudioSubModal();">
                             <div class="audio-card-left">
                                 <span class="audio-card-badge">Server 4</span>
                                 <div class="audio-card-info">
@@ -321,7 +349,7 @@
                                 </div>
                             </div>
                             <span class="audio-card-status" id="status-vidsrcsu"></span>
-                        </div>
+                        </button>
                     </div>
                 </div>
 
@@ -329,7 +357,7 @@
                 <div class="audio-sub-body hidden" id="quality-tab-content">
                     <div class="sub-section-title">Select Video Stream Resolution</div>
                     <div class="quality-grid" id="quality-grid">
-                        <div class="quality-card active focusable" id="quality-card-auto" tabindex="0" onclick="Player.selectQuality('auto');">
+                        <button type="button" class="quality-card active focusable" id="quality-card-auto" tabindex="0" onclick="Player.selectQuality('auto');">
                             <div class="quality-card-left">
                                 <span class="quality-badge auto">AUTO</span>
                                 <div class="quality-card-info">
@@ -338,8 +366,8 @@
                                 </div>
                             </div>
                             <span class="quality-status" id="status-quality-auto">Active</span>
-                        </div>
-                        <div class="quality-card focusable" id="quality-card-2160" tabindex="0" onclick="Player.selectQuality('2160');">
+                        </button>
+                        <button type="button" class="quality-card focusable" id="quality-card-2160" tabindex="0" onclick="Player.selectQuality('2160');">
                             <div class="quality-card-left">
                                 <span class="quality-badge uhd">4K UHD</span>
                                 <div class="quality-card-info">
@@ -348,8 +376,8 @@
                                 </div>
                             </div>
                             <span class="quality-status" id="status-quality-2160"></span>
-                        </div>
-                        <div class="quality-card focusable" id="quality-card-1080" tabindex="0" onclick="Player.selectQuality('1080');">
+                        </button>
+                        <button type="button" class="quality-card focusable" id="quality-card-1080" tabindex="0" onclick="Player.selectQuality('1080');">
                             <div class="quality-card-left">
                                 <span class="quality-badge fhd">1080p</span>
                                 <div class="quality-card-info">
@@ -358,8 +386,8 @@
                                 </div>
                             </div>
                             <span class="quality-status" id="status-quality-1080"></span>
-                        </div>
-                        <div class="quality-card focusable" id="quality-card-720" tabindex="0" onclick="Player.selectQuality('720');">
+                        </button>
+                        <button type="button" class="quality-card focusable" id="quality-card-720" tabindex="0" onclick="Player.selectQuality('720');">
                             <div class="quality-card-left">
                                 <span class="quality-badge hd">720p</span>
                                 <div class="quality-card-info">
@@ -368,8 +396,8 @@
                                 </div>
                             </div>
                             <span class="quality-status" id="status-quality-720"></span>
-                        </div>
-                        <div class="quality-card focusable" id="quality-card-480" tabindex="0" onclick="Player.selectQuality('480');">
+                        </button>
+                        <button type="button" class="quality-card focusable" id="quality-card-480" tabindex="0" onclick="Player.selectQuality('480');">
                             <div class="quality-card-left">
                                 <span class="quality-badge sd">480p</span>
                                 <div class="quality-card-info">
@@ -378,7 +406,7 @@
                                 </div>
                             </div>
                             <span class="quality-status" id="status-quality-480"></span>
-                        </div>
+                        </button>
                     </div>
                     <div class="quality-note" style="margin-top: 18px; padding: 14px 20px; background: rgba(255,255,255,0.05); border-radius: 10px; font-size: 14px; color: #aaa; line-height: 1.5; border: 1px solid rgba(255,255,255,0.08);">
                         💡 <strong>Adaptive Bitrate Streaming:</strong> Online cinema streams automatically adjust to the highest resolution (up to 4K / 1080p) supported by your current connection. Switching resolution reloads the stream at your exact playback position.

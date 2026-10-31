@@ -20,11 +20,23 @@ const Player = {
     // Audio & Subtitles State
     isAudioSubModalOpen: false,
     isHudVisible: false,
+    isVideoPlaying: false,
+    fallbackPlayTimer: null,
     currentAudioTrack: localStorage.getItem("aura_audio") || "ta",
     currentSubtitle: "off",
     subtitleOffset: 0.0,
     subtitleCues: [],
     subtitleInterval: null,
+    timelineInterval: null,
+
+    // Volume & Sound State
+    volume: (function() {
+        const v = localStorage.getItem("aura_player_volume");
+        return v !== null ? parseFloat(v) : 1.0;
+    })(),
+    isMuted: false,
+    volumeBtnEl: null,
+    unmuteBannerEl: null,
 
     init() {
         this.container = document.getElementById("player-container");
@@ -40,9 +52,12 @@ const Player = {
         this.audioSubModal = document.getElementById("audio-sub-modal");
         this.subtitleOffsetVal = document.getElementById("subtitle-offset-val");
         this.qualityBtnEl = document.getElementById("player-quality-btn");
+        this.volumeBtnEl = document.getElementById("player-volume-btn");
+        this.unmuteBannerEl = document.getElementById("player-unmute-banner");
 
         this.updateQualityDisplay();
         this.updateAudioTrackDisplay();
+        this.updateVolumeDisplay();
 
         // Wire explicit click listeners for top HUD action buttons
         const audioSubBtn = document.getElementById("player-audio-sub-btn");
@@ -83,6 +98,28 @@ const Player = {
             }
         }
 
+        // Wire click listeners for volume controls
+        if (this.volumeBtnEl) {
+            this.volumeBtnEl.addEventListener("click", (e) => {
+                e.stopPropagation();
+                this.toggleMute();
+            });
+        }
+        if (this.unmuteBannerEl) {
+            this.unmuteBannerEl.addEventListener("click", (e) => {
+                e.stopPropagation();
+                this.unmute();
+            });
+        }
+        const volTvDown = document.getElementById("btn-vol-tv-down");
+        if (volTvDown) volTvDown.addEventListener("click", (e) => { e.stopPropagation(); this.adjustTvVolume(-1); });
+        const volTvUp = document.getElementById("btn-vol-tv-up");
+        if (volTvUp) volTvUp.addEventListener("click", (e) => { e.stopPropagation(); this.adjustTvVolume(1); });
+        const vol100 = document.getElementById("btn-vol-100");
+        if (vol100) vol100.addEventListener("click", (e) => { e.stopPropagation(); this.setVolume(1.0); });
+        const volMute = document.getElementById("btn-vol-mute");
+        if (volMute) volMute.addEventListener("click", (e) => { e.stopPropagation(); this.toggleMute(); });
+
         // Activity monitor to auto-hide HUD
         window.addEventListener("mousemove", () => {
             if (this.isOpen && !this.isAudioSubModalOpen) {
@@ -94,41 +131,76 @@ const Player = {
         window.addEventListener("message", (ev) => {
             if (!this.isOpen || !ev.data) return;
             try {
-                const data = typeof ev.data === "string" ? JSON.parse(ev.data) : ev.data;
+                let data = ev.data;
+                if (typeof data === "string") {
+                    try { data = JSON.parse(data); } catch (e) {}
+                }
                 if (!data) return;
+                if (data.data && typeof data.data === "object") {
+                    data = Object.assign({}, data, data.data);
+                }
 
-                // Handle vidsrc.pm & vidlink stream events
-                if (data.event === "timeupdate" || typeof data.currentTime === "number" || typeof data.time === "number") {
-                    const time = (typeof data.currentTime === "number") ? data.currentTime : data.time;
-                    if (typeof time === "number" && time >= 0) {
-                        this.currentTime = Math.floor(time);
-                        this.initialStartTime = this.currentTime;
-                        this.playStartTime = Date.now();
-                    }
+                const eventName = (data.event || data.type || "").toLowerCase();
+
+                if (eventName === "play" || eventName === "playing" || eventName === "media_play") {
+                    this.isVideoPlaying = true;
+                    this.isPaused = false;
+                    this.playStartTime = Date.now();
+                } else if (eventName === "pause" || eventName === "media_pause" || eventName === "ended") {
+                    this.isVideoPlaying = false;
+                    this.isPaused = true;
+                    this.hideSubtitleOverlay();
+                }
+
+                const time = (typeof data.currentTime === "number") 
+                    ? data.currentTime 
+                    : ((typeof data.time === "number") ? data.time : null);
+
+                if (typeof time === "number" && !isNaN(time) && time >= 0) {
+                    this.currentTime = Math.floor(time);
+                    this.initialStartTime = this.currentTime;
+                    this.playStartTime = Date.now();
+                    this.isVideoPlaying = true;
+                    this.isPaused = false;
+
                     if (typeof data.duration === "number" && data.duration > 0) {
                         this.duration = Math.floor(data.duration);
                     }
                     this.recordProgress();
                     this.updateSubtitleCue();
-                }
-
-                if (data.event === "play") {
-                    this.isPaused = false;
-                } else if (data.event === "pause") {
-                    this.isPaused = true;
-                } else if (data.event === "seeked" && typeof data.currentTime === "number") {
+                } else if (eventName === "seeked" && typeof data.currentTime === "number") {
                     this.currentTime = Math.floor(data.currentTime);
                     this.updateSubtitleCue();
+                }
+
+                // Listen for volume or mute updates from stream player
+                if (data.muted === true) {
+                    this.isMuted = true;
+                    this.updateVolumeDisplay();
+                } else if (data.muted === false) {
+                    this.isMuted = false;
+                    this.updateVolumeDisplay();
+                }
+                if (typeof data.volume === "number" && !isNaN(data.volume)) {
+                    this.volume = Math.max(0, Math.min(1.0, data.volume > 1 ? data.volume / 100 : data.volume));
+                    this.updateVolumeDisplay();
                 }
             } catch (e) {}
         });
     },
 
     play(media, season = null, episode = null, startTime = null) {
+        if (window.App && window.App.isModalOpen) {
+            window.App.closeModal();
+        }
+
         this.currentMedia = Object.assign({}, media, { season: season, episode: episode });
         this.isOpen = true;
         this.isPaused = false;
+        this.isVideoPlaying = false;
         this.isAudioSubModalOpen = false;
+        this.hideSubtitleOverlay();
+        clearTimeout(this.fallbackPlayTimer);
 
         // Check if there is an existing continue watching progress
         const saved = (window.App && typeof window.App.getContinueWatchingItem === "function")
@@ -172,21 +244,58 @@ const Player = {
             this.recordProgress();
         }, 3000);
 
+        // Timeline ticker (advances every 1s only when video is genuinely playing)
+        clearInterval(this.timelineInterval);
+        this.updateTimelineDisplay();
+        this.timelineInterval = setInterval(() => {
+            if (this.isOpen && this.isVideoPlaying && !this.isPaused) {
+                this.currentTime = (typeof this.currentTime === "number" && this.currentTime > 0)
+                    ? this.currentTime + 1
+                    : Math.floor((Date.now() - this.playStartTime) / 1000) + (this.initialStartTime || 0);
+                this.updateTimelineDisplay();
+            }
+        }, 1000);
+
         // Subtitle sync ticker
         clearInterval(this.subtitleInterval);
         this.subtitleInterval = setInterval(() => {
             this.updateSubtitleCue();
         }, 250);
 
-        // Position initial focus on Audio & Subtitles button so TV remote immediately has active navigation
+        // Position initial focus on Top HUD button so remote can immediately access Back, Audio, Quality, Server
         setTimeout(() => {
-            const initialBtn = document.getElementById("player-audio-sub-btn") || document.getElementById("player-back-btn");
-            if (initialBtn && window.Navigation) {
-                window.Navigation.setFocus(initialBtn);
+            const initialFocusBtn = document.getElementById("player-audio-sub-btn") || 
+                                    document.getElementById("player-quality-btn") || 
+                                    document.getElementById("player-back-btn");
+            if (initialFocusBtn && window.Navigation) {
+                window.Navigation.setFocus(initialFocusBtn);
             }
         }, 150);
 
         this.showHudTemporarily(7000);
+    },
+
+    async getImdbId() {
+        if (!this.currentMedia) return null;
+        if (this.currentMedia.imdb_id) return this.currentMedia.imdb_id;
+        if (this.currentMedia.external_ids && this.currentMedia.external_ids.imdb_id) {
+            this.currentMedia.imdb_id = this.currentMedia.external_ids.imdb_id;
+            return this.currentMedia.imdb_id;
+        }
+        try {
+            const isTv = this.currentMedia.media_type === "tv" || !!this.currentMedia.season;
+            const type = isTv ? "tv" : "movie";
+            if (window.TMDB && typeof window.TMDB.getExternalIds === "function") {
+                const data = await window.TMDB.getExternalIds(type, this.currentMedia.id);
+                if (data && data.imdb_id) {
+                    this.currentMedia.imdb_id = data.imdb_id;
+                    return data.imdb_id;
+                }
+            }
+        } catch (e) {
+            console.warn("[Player] Could not fetch IMDb ID:", e);
+        }
+        return null;
     },
 
     recordProgress() {
@@ -229,16 +338,21 @@ const Player = {
         const e = episode || 1;
         const startSec = Math.floor(this.initialStartTime);
         const timeParam = startSec > 5 ? `&startAt=${startSec}&t=${startSec}` : "";
-        const qualParam = (this.currentQuality && this.currentQuality !== "auto") ? `&quality=${this.currentQuality}` : "";
+        const qualParam = (this.currentQuality && this.currentQuality !== "auto") 
+            ? `&quality=${this.currentQuality}&res=${this.currentQuality}` 
+            : "";
         const audioParam = (this.currentAudioTrack && this.currentAudioTrack !== "original") 
             ? `&audio=${this.currentAudioTrack}&lang=${this.currentAudioTrack}` 
+            : "";
+        const subParam = (this.activeSubtitleUrl && this.currentSubtitle !== "off")
+            ? `&sub_url=${encodeURIComponent(this.activeSubtitleUrl)}&sub_label=${encodeURIComponent(this.getLanguageDisplayName(this.currentSubtitle))}`
             : "";
 
         switch (this.currentServer) {
             case "vidlink":
                 url = isTv 
-                    ? `https://vidlink.pro/tv/${id}/${s}/${e}?autoplay=true&primaryColor=E50914${timeParam}${qualParam}${audioParam}`
-                    : `https://vidlink.pro/movie/${id}?autoplay=true&primaryColor=E50914${timeParam}${qualParam}${audioParam}`;
+                    ? `https://vidlink.pro/tv/${id}/${s}/${e}?autoplay=true&primaryColor=E50914&multiLang=true${timeParam}${qualParam}${audioParam}${subParam}`
+                    : `https://vidlink.pro/movie/${id}?autoplay=true&primaryColor=E50914&multiLang=true${timeParam}${qualParam}${audioParam}${subParam}`;
                 break;
             case "twoembed":
                 url = isTv 
@@ -253,25 +367,91 @@ const Player = {
             case "vidsrc_pm":
             default:
                 url = isTv 
-                    ? `https://vidsrc.pm/embed/tv/${id}/${s}/${e}?autoplay=1${timeParam}`
-                    : `https://vidsrc.pm/embed/movie/${id}?autoplay=1${timeParam}`;
+                    ? `https://vidsrc.pm/embed/tv/${id}/${s}/${e}?autoplay=1${timeParam}${qualParam}`
+                    : `https://vidsrc.pm/embed/movie/${id}?autoplay=1${timeParam}${qualParam}`;
                 break;
         }
 
-        console.log(`[Player] Loading stream (${this.currentServer}): ${url} (startAt: ${startSec}s, quality: ${this.currentQuality})`);
+        console.log(`[Player] Loading stream (${this.currentServer}): ${url} (startAt: ${startSec}s, quality: ${this.currentQuality}, audio: ${this.currentAudioTrack})`);
         this.frame.removeAttribute("sandbox");
+        this.isVideoPlaying = false;
+        this.hideSubtitleOverlay();
+        clearTimeout(this.fallbackPlayTimer);
+
+        this.frame.onload = () => {
+            if (!this.isOpen) return;
+            // Check direct DOM if same-origin
+            try {
+                const rootDoc = this.frame.contentDocument;
+                if (rootDoc) {
+                    const v = rootDoc.querySelector("video");
+                    if (v) {
+                        v.addEventListener("play", () => {
+                            this.isVideoPlaying = true;
+                            this.isPaused = false;
+                            this.playStartTime = Date.now();
+                        });
+                        v.addEventListener("pause", () => {
+                            this.isVideoPlaying = false;
+                            this.isPaused = true;
+                            this.hideSubtitleOverlay();
+                        });
+                        v.addEventListener("timeupdate", () => {
+                            if (!v.paused) {
+                                this.currentTime = Math.floor(v.currentTime);
+                                this.isVideoPlaying = true;
+                                this.isPaused = false;
+                                this.updateSubtitleCue();
+                            }
+                        });
+                        if (!v.paused && v.currentTime > 0) {
+                            this.isVideoPlaying = true;
+                        }
+                    }
+                }
+            } catch (e) {}
+
+            // For embed providers that don't send cross-origin postMessage:
+            // Allow a buffer duration (3.5s) after iframe loads before considering stream started
+            clearTimeout(this.fallbackPlayTimer);
+            this.fallbackPlayTimer = setTimeout(() => {
+                if (this.isOpen && !this.isPaused) {
+                    this.isVideoPlaying = true;
+                    this.playStartTime = Date.now();
+                }
+            }, 3500);
+        };
+
         this.frame.src = url;
         this.isPaused = false;
 
-        // Perform a single gentle autoplay check after 1.2s - NEVER loop or click repeatedly!
+        // Perform initial autoplay and volume application checks
         setTimeout(() => {
             if (this.isOpen) {
                 this.triggerInitialPlay();
+                this.applyVolumeToStream();
             }
         }, 1200);
+
+        // Additional sync checks at 2.5s and 4s to ensure stream is unmuted
+        setTimeout(() => {
+            if (this.isOpen) {
+                this.applyVolumeToStream();
+            }
+        }, 2500);
+
+        setTimeout(() => {
+            if (this.isOpen) {
+                this.applyVolumeToStream();
+            }
+        }, 4000);
     },
 
     switchServer(serverKey) {
+        this.isVideoPlaying = false;
+        this.hideSubtitleOverlay();
+        clearTimeout(this.fallbackPlayTimer);
+
         // Carry forward elapsed time when switching servers
         const elapsed = this.currentTime > 0
             ? this.currentTime
@@ -361,22 +541,32 @@ const Player = {
 
         this.updateAudioTrackDisplay();
         const displayName = this.getAudioTrackDisplayName(trackKey);
-        this.showToast(`🔊 Audio: ${displayName}`);
+        this.showToast(`🔊 Audio Dub: ${displayName} [Applied]`);
+
+        // Carry forward elapsed playback position
+        const elapsed = (typeof this.currentTime === "number" && this.currentTime > 0)
+            ? this.currentTime
+            : Math.floor((Date.now() - this.playStartTime) / 1000) + (this.initialStartTime || 0);
+        this.initialStartTime = elapsed;
+        this.currentTime = elapsed;
+        this.playStartTime = Date.now();
 
         // If user picked a dubbed track and currently on Server 1,
         // switch to Server 2 (VidLink Pro) which provides multi-audio dub streams
         if (trackKey !== "original" && this.currentServer === "vidsrc_pm") {
-            this.switchServer("vidlink");
-            this.showToast(`Switched to Server 2 (VidLink Pro) for ${displayName}`);
-        } else if (this.currentServer === "vidlink") {
-            const frame = document.getElementById("player-frame");
-            if (frame && frame.contentWindow) {
-                try {
-                    frame.contentWindow.postMessage({ action: "setAudioTrack", audio: trackKey }, "*");
-                    frame.contentWindow.postMessage({ type: "CHANGE_AUDIO", language: trackKey }, "*");
-                } catch (e) {}
-            }
+            this.currentServer = "vidlink";
+            this.updateServerButtons();
         }
+
+        // Always reload stream with selected audio parameters and carried-over time
+        this.loadStreamUrl();
+
+        // Smoothly close modal after 350ms
+        setTimeout(() => {
+            if (this.isAudioSubModalOpen) {
+                this.closeAudioSubModal();
+            }
+        }, 350);
     },
 
     updateAudioTrackDisplay() {
@@ -432,10 +622,13 @@ const Player = {
             // Only trigger play if video is actually paused; NEVER click repeatedly!
             const v = rootDoc.querySelector("video");
             if (v && v.paused) {
-                v.muted = false;
+                v.muted = this.isMuted;
+                v.volume = this.isMuted ? 0 : this.volume;
                 v.play().catch(() => {});
             }
         } catch (e) {}
+
+        this.applyVolumeToStream();
     },
 
     togglePlayPause() {
@@ -443,6 +636,18 @@ const Player = {
         if (!frame) return;
 
         this.isPaused = !this.isPaused;
+        if (this.isPaused) {
+            this.isVideoPlaying = false;
+            this.hideSubtitleOverlay();
+        } else {
+            this.isVideoPlaying = true;
+            this.playStartTime = Date.now();
+        }
+
+        // Update center and bottom play/pause icons
+        const icon = this.isPaused ? "▶" : "⏸";
+        if (this.playIcon) this.playIcon.textContent = icon;
+        if (this.barPlayIcon) this.barPlayIcon.textContent = icon;
 
         // 1. Send dedicated postMessage to vidsrc.pm & vidlink
         if (frame.contentWindow) {
@@ -468,8 +673,37 @@ const Player = {
             }
         } catch (e) {}
 
+        this.updateTimelineDisplay();
         // 3. Show sleek TV on-screen toast
         this.showToast(this.isPaused ? "⏸ Paused" : "▶ Playing");
+    },
+
+    formatTime(s) {
+        if (typeof s !== "number" || isNaN(s) || s < 0) return "0:00";
+        const h = Math.floor(s / 3600);
+        const m = Math.floor((s % 3600) / 60);
+        const sec = Math.floor(s % 60);
+        if (h > 0) {
+            return `${h}:${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+        }
+        return `${m}:${sec.toString().padStart(2, '0')}`;
+    },
+
+    updateTimelineDisplay() {
+        if (!this.isOpen) return;
+        const elapsed = (typeof this.currentTime === "number" && this.currentTime > 0)
+            ? this.currentTime
+            : (this.isPaused ? (this.currentTime || 0) : Math.floor((Date.now() - this.playStartTime) / 1000) + (this.initialStartTime || 0));
+
+        const dur = this.duration || ((this.currentMedia && this.currentMedia.runtime) ? (this.currentMedia.runtime * 60) : 5400);
+
+        if (this.currentTimeEl) this.currentTimeEl.textContent = this.formatTime(elapsed);
+        if (this.totalTimeEl) this.totalTimeEl.textContent = this.formatTime(dur);
+
+        if (this.scrubberFill && dur > 0) {
+            const pct = Math.min(100, Math.max(0, (elapsed / dur) * 100));
+            this.scrubberFill.style.width = `${pct}%`;
+        }
     },
 
     seek(deltaSeconds) {
@@ -505,20 +739,223 @@ const Player = {
         } catch (e) {}
 
         this.updateSubtitleCue();
-
-        // 3. Format timestamp and display TV toast
-        const formatTime = (s) => {
-            const h = Math.floor(s / 3600);
-            const m = Math.floor((s % 3600) / 60);
-            const sec = Math.floor(s % 60);
-            if (h > 0) {
-                return `${h}:${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
-            }
-            return `${m}:${sec.toString().padStart(2, '0')}`;
-        };
+        this.updateTimelineDisplay();
 
         const prefix = deltaSeconds > 0 ? "⏩ +" : "⏪ -";
-        this.showToast(`${prefix}${Math.abs(deltaSeconds)}s  (${formatTime(target)})`);
+        this.showToast(`${prefix}${Math.abs(deltaSeconds)}s  (${this.formatTime(target)})`);
+    },
+
+    seekTo(targetSeconds) {
+        const frame = document.getElementById("player-frame");
+        if (!frame) return;
+
+        const maxDur = this.duration || 5400;
+        const target = Math.max(0, Math.min(maxDur, targetSeconds));
+        this.currentTime = target;
+        this.initialStartTime = target;
+        this.playStartTime = Date.now();
+
+        if (frame.contentWindow) {
+            try {
+                frame.contentWindow.postMessage({ action: "seek", time: target }, "*");
+                frame.contentWindow.postMessage({ type: "MEDIA_SEEK", time: target }, "*");
+            } catch (e) {}
+        }
+
+        try {
+            const rootDoc = frame.contentDocument;
+            if (rootDoc) {
+                const v = rootDoc.querySelector("video");
+                if (v) v.currentTime = target;
+            }
+        } catch (e) {}
+
+        this.updateSubtitleCue();
+        this.updateTimelineDisplay();
+        this.showToast(`⏱ ${this.formatTime(target)}`);
+    },
+
+    setVolume(level) {
+        this.volume = Math.max(0, Math.min(1.0, Math.round(level * 100) / 100));
+        this.isMuted = (this.volume === 0);
+        try {
+            localStorage.setItem("aura_player_volume", this.volume.toString());
+        } catch (e) {}
+        this.applyVolumeToStream();
+        this.updateVolumeDisplay();
+        const pct = Math.round(this.volume * 100);
+        this.showToast(this.isMuted ? "🔇 Audio Muted" : `🔊 Volume: ${pct}%`);
+    },
+
+    toggleMute() {
+        this.isMuted = !this.isMuted;
+        if (!this.isMuted && this.volume <= 0.05) {
+            this.volume = 1.0;
+        }
+        try {
+            localStorage.setItem("aura_player_volume", this.volume.toString());
+        } catch (e) {}
+        this.applyVolumeToStream();
+        this.updateVolumeDisplay();
+        const pct = Math.round(this.volume * 100);
+        this.showToast(this.isMuted ? "🔇 Audio Muted" : `🔊 Audio Unmuted (${pct}%)`);
+    },
+
+    unmute() {
+        this.isMuted = false;
+        if (this.volume <= 0.05) {
+            this.volume = 1.0;
+        }
+        try {
+            localStorage.setItem("aura_player_volume", this.volume.toString());
+        } catch (e) {}
+        this.applyVolumeToStream();
+        this.updateVolumeDisplay();
+        const pct = Math.round(this.volume * 100);
+        this.showToast(`🔊 Audio Unmuted (${pct}%)`);
+    },
+
+    mute() {
+        this.isMuted = true;
+        this.applyVolumeToStream();
+        this.updateVolumeDisplay();
+        this.showToast("🔇 Audio Muted");
+    },
+
+    adjustTvVolume(delta) {
+        if (window.TizenBridge && typeof window.TizenBridge.setTvVolumeUp === "function") {
+            const res = delta > 0 ? window.TizenBridge.setTvVolumeUp() : window.TizenBridge.setTvVolumeDown();
+            if (res !== null) {
+                this.updateVolumeDisplay();
+                return;
+            }
+        }
+        // Fallback for non-Tizen
+        this.adjustVolume(delta * 0.1);
+    },
+
+    adjustVolume(delta) {
+        if (this.isMuted) {
+            this.isMuted = false;
+        }
+        this.volume = Math.max(0, Math.min(1.0, Math.round((this.volume + delta) * 10) / 10));
+        if (this.volume === 0) {
+            this.isMuted = true;
+        }
+        try {
+            localStorage.setItem("aura_player_volume", this.volume.toString());
+        } catch (e) {}
+        this.applyVolumeToStream();
+        this.updateVolumeDisplay();
+        const pct = Math.round(this.volume * 100);
+        this.showToast(this.isMuted ? "🔇 Audio Muted" : `🔊 Volume: ${pct}%`);
+    },
+
+    applyVolumeToStream() {
+        const frame = document.getElementById("player-frame");
+        if (!frame) return;
+
+        const targetVol = this.isMuted ? 0 : this.volume;
+
+        // 1. Send all recognized postMessage volume & mute command structures
+        if (frame.contentWindow) {
+            const messages = [
+                { action: "setVolume", volume: targetVol },
+                { type: "SET_VOLUME", volume: targetVol },
+                { action: "volume", value: targetVol },
+                { type: "volume", value: targetVol },
+                { action: this.isMuted ? "mute" : "unmute" },
+                { type: this.isMuted ? "MUTE" : "UNMUTE" },
+                { action: "setMuted", muted: this.isMuted },
+                { type: "SET_MUTED", muted: this.isMuted },
+                { event: "command", func: "setVolume", args: [Math.round(targetVol * 100)] },
+                { event: "command", func: this.isMuted ? "mute" : "unMute", args: [] }
+            ];
+            messages.forEach(msg => {
+                try { frame.contentWindow.postMessage(msg, "*"); } catch (e) {}
+                try { frame.contentWindow.postMessage(JSON.stringify(msg), "*"); } catch (e) {}
+            });
+        }
+
+        // 2. Direct DOM manipulation if frame is accessible
+        try {
+            const rootDoc = frame.contentDocument;
+            if (rootDoc) {
+                const videos = rootDoc.querySelectorAll("video");
+                videos.forEach(v => {
+                    v.muted = this.isMuted;
+                    v.volume = targetVol;
+                });
+            }
+        } catch (e) {}
+    },
+
+    updateVolumeDisplay() {
+        // A. Top HUD Volume Button
+        if (!this.volumeBtnEl) {
+            this.volumeBtnEl = document.getElementById("player-volume-btn");
+        }
+        if (this.volumeBtnEl) {
+            const pct = Math.round(this.volume * 100);
+            if (this.isMuted || pct === 0) {
+                this.volumeBtnEl.innerHTML = "🔇 Muted";
+            } else if (this.volume >= 0.75) {
+                this.volumeBtnEl.innerHTML = `🔊 ${pct}%`;
+            } else if (this.volume >= 0.3) {
+                this.volumeBtnEl.innerHTML = `🔉 ${pct}%`;
+            } else {
+                this.volumeBtnEl.innerHTML = `🔈 ${pct}%`;
+            }
+        }
+
+        // B. Audio Modal Volume Buttons
+        const btnTvLabel = document.getElementById("btn-vol-tv-label");
+        const btn100 = document.getElementById("btn-vol-100");
+        const btnMute = document.getElementById("btn-vol-mute");
+        const muteIcon = document.getElementById("btn-vol-mute-icon");
+        const muteLabel = document.getElementById("btn-vol-mute-label");
+
+        if (btn100) btn100.classList.remove("active");
+        if (btnMute) btnMute.classList.remove("active");
+
+        if (window.TizenBridge && typeof window.TizenBridge.getTvVolume === "function") {
+            const tvVol = window.TizenBridge.getTvVolume();
+            if (btnTvLabel && tvVol !== null) {
+                btnTvLabel.textContent = `TV Vol + (${tvVol})`;
+            }
+        }
+
+        if (this.isMuted || this.volume === 0) {
+            if (btnMute) btnMute.classList.add("active");
+            if (muteIcon) muteIcon.textContent = "🔊";
+            if (muteLabel) muteLabel.textContent = "Unmute";
+        } else {
+            if (muteIcon) muteIcon.textContent = "🔇";
+            if (muteLabel) muteLabel.textContent = "Mute";
+            if (this.volume >= 0.95 && btn100) {
+                btn100.classList.add("active");
+            }
+        }
+
+        // C. Floating Unmute Banner
+        if (!this.unmuteBannerEl) {
+            this.unmuteBannerEl = document.getElementById("player-unmute-banner");
+        }
+        if (this.unmuteBannerEl) {
+            if (this.isMuted && this.isOpen) {
+                this.unmuteBannerEl.classList.remove("hidden");
+            } else {
+                this.unmuteBannerEl.classList.add("hidden");
+            }
+        }
+    },
+
+    toggleFullscreen() {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(() => {});
+        } else {
+            document.exitFullscreen().catch(() => {});
+        }
     },
 
     showToast(text) {
@@ -554,13 +991,13 @@ const Player = {
         this.hideTimeout = setTimeout(() => {
             if (this.isOpen && !this.isAudioSubModalOpen) {
                 // If user is currently focused on any top HUD button, don't suddenly hide
-                const isHudFocused = window.Navigation && window.Navigation.currentFocus &&
+                const isFocusedInPlayer = window.Navigation && window.Navigation.currentFocus &&
                     (window.Navigation.currentFocus.id === "player-back-btn" || 
                      window.Navigation.currentFocus.id === "player-audio-sub-btn" ||
                      window.Navigation.currentFocus.id === "player-quality-btn" ||
                      window.Navigation.currentFocus.classList.contains("server-btn") ||
                      (window.Navigation.currentFocus.closest && window.Navigation.currentFocus.closest(".player-hud")));
-                if (!isHudFocused) {
+                if (!isFocusedInPlayer) {
                     this.hideHud();
                 } else {
                     // Refresh HUD once more if user was navigating
@@ -576,14 +1013,16 @@ const Player = {
             this.hud.classList.remove("fade-in");
             this.hud.classList.add("fade-out");
         }
-        // Remove focus styling from top HUD buttons if unfocused
-        const isHudFocused = window.Navigation && window.Navigation.currentFocus &&
+
+        // Remove focus styling from player controls if unfocused
+        const isFocusedInPlayer = window.Navigation && window.Navigation.currentFocus &&
             (window.Navigation.currentFocus.id === "player-back-btn" || 
              window.Navigation.currentFocus.id === "player-audio-sub-btn" ||
              window.Navigation.currentFocus.id === "player-quality-btn" ||
              window.Navigation.currentFocus.classList.contains("server-btn") ||
              (window.Navigation.currentFocus.closest && window.Navigation.currentFocus.closest(".player-hud")));
-        if (isHudFocused && window.Navigation) {
+
+        if (isFocusedInPlayer && window.Navigation) {
             window.Navigation.currentFocus.classList.remove("focused");
             window.Navigation.currentFocus.blur();
             window.Navigation.currentFocus = null;
@@ -608,20 +1047,23 @@ const Player = {
         this.switchAudioSubTab(defaultTab);
     },
 
-    closeAudioSubModal() {
+    closeAudioSubModal(returnToHud = false) {
         this.isAudioSubModalOpen = false;
         if (this.audioSubModal) {
             this.audioSubModal.classList.add("hidden");
         }
-        // Return focus to corresponding button in HUD
-        this.showHudTemporarily();
-        const targetBtn = document.getElementById("player-audio-sub-btn") || document.getElementById("player-back-btn");
-        if (targetBtn && window.Navigation) {
-            window.Navigation.setFocus(targetBtn);
+        if (returnToHud) {
+            this.showHudTemporarily();
+            const targetBtn = document.getElementById("player-audio-sub-btn") || document.getElementById("player-back-btn");
+            if (targetBtn && window.Navigation) {
+                window.Navigation.setFocus(targetBtn);
+            }
+        } else {
+            this.hideHud();
         }
     },
 
-    switchAudioSubTab(tabName) {
+    switchAudioSubTab(tabName, keepFocusOnTab = false) {
         const subTab = document.getElementById("tab-subtitles");
         const audioTab = document.getElementById("tab-audio");
         const qualityTab = document.getElementById("tab-quality");
@@ -641,23 +1083,23 @@ const Player = {
         if (tabName === "quality") {
             if (qualityTab) qualityTab.classList.add("active");
             if (qualityContent) qualityContent.classList.remove("hidden");
-            const activeCard = document.querySelector(".quality-card.active") || qualityTab;
-            if (activeCard && window.Navigation) {
-                window.Navigation.setFocus(activeCard);
+            if (!keepFocusOnTab && window.Navigation) {
+                const activeCard = document.querySelector(".quality-card.active") || document.querySelector(".quality-card") || qualityTab;
+                if (activeCard) window.Navigation.setFocus(activeCard);
             }
         } else if (tabName === "audio") {
             if (audioTab) audioTab.classList.add("active");
             if (audioContent) audioContent.classList.remove("hidden");
-            const activeCard = document.querySelector(".audio-lang-btn.active") || document.querySelector(".audio-server-card.active") || audioTab;
-            if (activeCard && window.Navigation) {
-                window.Navigation.setFocus(activeCard);
+            if (!keepFocusOnTab && window.Navigation) {
+                const activeCard = document.querySelector(".audio-lang-btn.active") || document.querySelector(".audio-server-card.active") || audioTab;
+                if (activeCard) window.Navigation.setFocus(activeCard);
             }
         } else {
             if (subTab) subTab.classList.add("active");
             if (subContent) subContent.classList.remove("hidden");
-            const activeBtn = document.querySelector(".sub-lang-btn.active") || subTab;
-            if (activeBtn && window.Navigation) {
-                window.Navigation.setFocus(activeBtn);
+            if (!keepFocusOnTab && window.Navigation) {
+                const activeBtn = document.querySelector(".sub-lang-btn.active") || document.querySelector(".sub-lang-btn") || subTab;
+                if (activeBtn) window.Navigation.setFocus(activeBtn);
             }
         }
     },
@@ -694,7 +1136,22 @@ const Player = {
 
         this.updateQualityDisplay();
         const displayName = this.getQualityDisplayName(qualityKey);
-        this.showToast(`⚙ Resolution: ${displayName}`);
+        this.showToast(`⚙ Resolution: ${displayName} [Applied]`);
+
+        // Update active class on quality cards immediately
+        const qualityKeys = ["auto", "2160", "1080", "720", "480"];
+        qualityKeys.forEach(k => {
+            const cardEl = document.getElementById(`quality-card-${k}`);
+            const statusEl = document.getElementById(`status-quality-${k}`);
+            const isActive = (k === qualityKey);
+            if (cardEl) {
+                if (isActive) cardEl.classList.add("active");
+                else cardEl.classList.remove("active");
+            }
+            if (statusEl) {
+                statusEl.textContent = isActive ? "Active" : "";
+            }
+        });
 
         // Try postMessage to active stream player
         if (this.frame && this.frame.contentWindow) {
@@ -706,30 +1163,36 @@ const Player = {
         }
 
         // Seamlessly carry over elapsed playback position
-        const elapsed = this.currentTime > 0
+        this.isVideoPlaying = false;
+        this.hideSubtitleOverlay();
+        clearTimeout(this.fallbackPlayTimer);
+        const elapsed = (typeof this.currentTime === "number" && this.currentTime > 0)
             ? this.currentTime
             : Math.floor((Date.now() - this.playStartTime) / 1000) + (this.initialStartTime || 0);
         this.initialStartTime = elapsed;
         this.currentTime = elapsed;
         this.playStartTime = Date.now();
 
-        // If a specific resolution is selected and on Server 1 (which lacks resolution parameters),
-        // switch to Server 2 (VidLink Pro) which provides multi-resolution streaming
-        if (qualityKey !== "auto" && this.currentServer === "vidsrc_pm") {
+        // Server routing logic for resolution:
+        // 4K UHD: Server 1 / Server 4 provide UHD master bitrate
+        // 1080p Full HD: Server 2 (VidLink Pro) provides high-FPS 1080p
+        if (qualityKey === "1080" && this.currentServer === "vidsrc_pm") {
             this.currentServer = "vidlink";
             this.updateServerButtons();
-            this.showToast(`Switched to Server 2 for ${displayName}`);
+        } else if (qualityKey === "2160" && this.currentServer === "vidlink") {
+            this.currentServer = "vidsrc_pm";
+            this.updateServerButtons();
         }
 
-        // Always reload stream URL with selected quality parameter
+        // Always reload stream URL with selected quality parameter and preserved timestamp
         this.loadStreamUrl();
 
-        // Auto close modal smoothly so viewer sees their chosen stream
+        // Auto close modal smoothly after 400ms so viewer sees their chosen stream
         setTimeout(() => {
             if (this.isAudioSubModalOpen) {
                 this.closeAudioSubModal();
             }
-        }, 350);
+        }, 400);
     },
 
     updateQualityDisplay() {
@@ -768,8 +1231,16 @@ const Player = {
 
         if (lang === "off") {
             this.subtitleCues = [];
+            this.activeSubtitleUrl = null;
             this.hideSubtitleOverlay();
+            const subBtn = document.getElementById("player-audio-sub-btn");
+            if (subBtn) subBtn.textContent = "💬 Audio & Subtitles";
             this.showToast("Subtitles: Off");
+            setTimeout(() => {
+                if (this.isAudioSubModalOpen) {
+                    this.closeAudioSubModal();
+                }
+            }, 400);
             return;
         }
 
@@ -782,43 +1253,119 @@ const Player = {
         const names = {
             "ta": "Tamil (தமிழ்)",
             "en": "English",
-            "es": "Spanish",
-            "fr": "French",
-            "de": "German",
-            "hi": "Hindi",
-            "ar": "Arabic",
-            "pt": "Portuguese",
-            "it": "Italian",
-            "ja": "Japanese"
+            "es": "Spanish (Español)",
+            "fr": "French (Français)",
+            "de": "German (Deutsch)",
+            "hi": "Hindi (हिंदी)",
+            "ar": "Arabic (العربية)",
+            "pt": "Portuguese (Português)",
+            "it": "Italian (Italiano)",
+            "ja": "Japanese (日本語)"
         };
         return names[code] || code.toUpperCase();
     },
 
-    fetchSubtitles(lang) {
+    async fetchSubtitles(lang) {
         if (!this.currentMedia) return;
-        const { id, media_type, season, episode } = this.currentMedia;
-        const isTv = media_type === "tv" || !!season;
+        const langName = this.getLanguageDisplayName(lang);
+        this.showToast(`💬 Searching ${langName} Subtitles...`);
 
-        // Build OpenSubtitles endpoint URL
+        const imdbId = await this.getImdbId();
+        if (!imdbId) {
+            console.warn("[Player] No IMDb ID available for subtitles");
+            this.showToast(`💬 Subtitles: Metadata not found`);
+            return;
+        }
+
+        const isTv = this.currentMedia.media_type === "tv" || !!this.currentMedia.season;
+        const s = this.currentMedia.season || 1;
+        const e = this.currentMedia.episode || 1;
+
+        // Query Stremio OpenSubtitles v3 working endpoint
         const endpoint = isTv
-            ? `https://opensubtitles-v3.strem.fun/subtitles/series/${id}:${season || 1}:${episode || 1}/${lang}.vtt`
-            : `https://opensubtitles-v3.strem.fun/subtitles/movie/${id}/${lang}.vtt`;
+            ? `https://opensubtitles-v3.strem.io/subtitles/series/${imdbId}:${s}:${e}.json`
+            : `https://opensubtitles-v3.strem.io/subtitles/movie/${imdbId}.json`;
 
-        console.log(`[Player] Fetching subtitles for ${lang}: ${endpoint}`);
-        fetch(endpoint)
-            .then(res => {
-                if (!res.ok) throw new Error("Status " + res.status);
-                return res.text();
-            })
-            .then(vttText => {
-                this.subtitleCues = this.parseSubtitleText(vttText);
-                this.showToast(`${this.getLanguageDisplayName(lang)} Subtitles Enabled (${this.subtitleCues.length} cues)`);
-                this.updateSubtitleCue();
-            })
-            .catch(err => {
-                console.log("[Player] Subtitle fetch notice:", err);
-                this.showToast(`${this.getLanguageDisplayName(lang)} Subtitles Active`);
+        console.log(`[Player] Querying subtitles from ${endpoint}`);
+        try {
+            const res = await fetch(endpoint);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            const subtitles = data.subtitles || [];
+
+            if (!subtitles.length) {
+                this.showToast(`💬 No subtitles found for this title`);
+                return;
+            }
+
+            // ISO language code match table
+            const langMap = {
+                "ta": ["tam", "ta", "tamil"],
+                "en": ["eng", "en", "english"],
+                "hi": ["hin", "hi", "hindi"],
+                "te": ["tel", "te", "telugu"],
+                "ml": ["mal", "ml", "malayalam"],
+                "kn": ["kan", "kn", "kannada"],
+                "es": ["spa", "es", "spanish"],
+                "fr": ["fre", "fra", "fr", "french"],
+                "de": ["ger", "deu", "de", "german"],
+                "ar": ["ara", "ar", "arabic"],
+                "pt": ["por", "pob", "pt", "portuguese"],
+                "it": ["ita", "it", "italian"],
+                "ja": ["jpn", "ja", "japanese"]
+            };
+
+            const searchCodes = langMap[lang] || [lang];
+            let matchedSub = subtitles.find(s => {
+                const sLang = (s.lang || "").toLowerCase();
+                const sName = (s.subtitleFileName || "").toLowerCase();
+                return searchCodes.some(c => sLang === c || sName.includes(c));
             });
+
+            let fallbackToEnglish = false;
+            if (!matchedSub) {
+                // If specific regional language not found, fallback to English subtitle
+                matchedSub = subtitles.find(s => s.lang === "eng" || s.lang === "en");
+                fallbackToEnglish = true;
+            }
+
+            if (!matchedSub || !matchedSub.url) {
+                this.showToast(`💬 Subtitles not available for this title`);
+                return;
+            }
+
+            console.log(`[Player] Downloading subtitle file: ${matchedSub.url}`);
+            const subRes = await fetch(matchedSub.url);
+            if (!subRes.ok) throw new Error(`Subtitle download failed: ${subRes.status}`);
+            const subText = await subRes.text();
+
+            this.subtitleCues = this.parseSubtitleText(subText);
+            this.activeSubtitleUrl = matchedSub.url;
+
+            // Update HUD action button label
+            const subBtn = document.getElementById("player-audio-sub-btn");
+            if (subBtn) {
+                subBtn.textContent = `💬 Subs: ${fallbackToEnglish ? "English" : langName}`;
+            }
+
+            if (fallbackToEnglish) {
+                this.showToast(`💬 ${langName} unavailable; English loaded (${this.subtitleCues.length} cues)`);
+            } else {
+                this.showToast(`💬 ${langName} Subtitles Enabled (${this.subtitleCues.length} cues)`);
+            }
+
+            this.updateSubtitleCue();
+
+            // Smoothly close modal after selecting subtitles
+            setTimeout(() => {
+                if (this.isAudioSubModalOpen) {
+                    this.closeAudioSubModal();
+                }
+            }, 600);
+        } catch (err) {
+            console.error("[Player] Subtitle fetch notice:", err);
+            this.showToast(`💬 Subtitle fetch error`);
+        }
     },
 
     parseSubtitleText(text) {
@@ -866,7 +1413,7 @@ const Player = {
     },
 
     updateSubtitleCue() {
-        if (!this.isOpen || this.currentSubtitle === "off" || !this.subtitleCues.length) {
+        if (!this.isOpen || !this.isVideoPlaying || this.isPaused || this.currentSubtitle === "off" || !this.subtitleCues.length) {
             this.hideSubtitleOverlay();
             return;
         }
@@ -917,11 +1464,15 @@ const Player = {
 
     close() {
         this.isOpen = false;
+        this.isPaused = true;
+        this.isVideoPlaying = false;
         this.isAudioSubModalOpen = false;
+        clearTimeout(this.fallbackPlayTimer);
         clearTimeout(this.hideTimeout);
         clearTimeout(this.toastTimeout);
         clearInterval(this.progressInterval);
         clearInterval(this.subtitleInterval);
+        clearInterval(this.timelineInterval);
         this.recordProgress();
         this.hideSubtitleOverlay();
 

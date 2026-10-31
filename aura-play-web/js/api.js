@@ -44,7 +44,7 @@ const TMDB = {
 
         const releaseDate = new Date(dateStr);
         const now = new Date();
-        // Exclude upcoming / future unreleased titles (e.g. Jailer 2 in 2026/2027)
+        // Exclude upcoming / future unreleased titles
         if (isNaN(releaseDate.getTime()) || releaseDate > now) {
             return false;
         }
@@ -52,21 +52,6 @@ const TMDB = {
         // 3. Filter spam entries with '+' in name or 'HD+Movie'
         const title = (item.title || item.name || "");
         if (title.includes("+") || title.toLowerCase().includes("hd movie")) {
-            return false;
-        }
-
-        const daysSinceRelease = (now - releaseDate) / (1000 * 60 * 60 * 24);
-        const votes = item.vote_count || 0;
-
-        // 4. Theatrical movies take at least 45 days to become available on digital OTT/VOD streaming scrapers.
-        // If a title's theatrical date was less than 45 days ago, require at least 30 verified votes
-        // proving an international/digital release is actively circulating.
-        if (daysSinceRelease < 45 && votes < 30) {
-            return false;
-        }
-
-        // 5. Exclude stubs with 0 votes and very low popularity
-        if (votes === 0 && (item.popularity || 0) < 3.0) {
             return false;
         }
 
@@ -132,8 +117,12 @@ const TMDB = {
 
     async getDetails(mediaType, id) {
         return await this.request(`/${mediaType}/${id}`, {
-            append_to_response: "credits,videos,recommendations"
+            append_to_response: "credits,videos,recommendations,external_ids"
         });
+    },
+
+    async getExternalIds(mediaType, id) {
+        return await this.request(`/${mediaType}/${id}/external_ids`);
     },
 
     async getSeason(tvId, seasonNumber) {

@@ -579,13 +579,28 @@ body.tizen-tv .audio-card-info p {
     font-size: 16px;
 }
 
-/* Native Offline Player Controls Focus */
-.native-ctrl-btn.focused {
+/* Cinema Stream & Native Player Controls Focus on TV */
+.native-ctrl-btn.focused,
+.player-ctrl-btn.focused {
+    transform: scale(1.22) !important;
+    border: 3px solid #ffffff !important;
+    background: #E50914 !important;
+    box-shadow: 0 0 35px rgba(229, 9, 20, 0.95) !important;
+    outline: none !important;
+}
+
+.player-bar-btn.focused {
     transform: scale(1.2) !important;
     border: 3px solid #ffffff !important;
     background: #E50914 !important;
-    box-shadow: 0 0 30px rgba(229, 9, 20, 0.9) !important;
+    box-shadow: 0 0 25px rgba(229, 9, 20, 0.85) !important;
     outline: none !important;
+}
+
+.player-scrubber-track.focused {
+    height: 12px !important;
+    border: 2px solid #ffffff !important;
+    box-shadow: 0 0 20px rgba(229, 9, 20, 0.8) !important;
 }
 
 body.tizen-tv .delete-download-card {
@@ -609,4 +624,28 @@ body.tizen-tv .delete-modal-desc {
 body.tizen-tv .btn-danger {
     font-size: 20px;
     padding: 16px 36px;
+}
+
+body.tizen-tv .player-unmute-banner {
+    top: 110px;
+    font-size: 20px;
+    padding: 16px 36px;
+    border-radius: 40px;
+}
+
+body.tizen-tv .audio-volume-controls {
+    gap: 16px;
+    margin-bottom: 28px;
+}
+
+body.tizen-tv .audio-vol-btn {
+    padding: 18px 16px;
+}
+
+body.tizen-tv .audio-vol-btn .vol-icon {
+    font-size: 30px;
+}
+
+body.tizen-tv .audio-vol-btn .vol-label {
+    font-size: 17px;
 }

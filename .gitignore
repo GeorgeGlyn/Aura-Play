@@ -19,3 +19,4 @@ build
 *.wgt
 .metadata/
 .sign/
+/*.png

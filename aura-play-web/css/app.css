@@ -617,13 +617,17 @@ body {
     transition: opacity 0.35s ease, visibility 0.35s ease;
 }
 
-.player-hud.fade-out {
+.player-hud.fade-out,
+.player-center-controls.fade-out,
+.player-bottom-hud.fade-out {
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
 }
 
-.player-hud.fade-in {
+.player-hud.fade-in,
+.player-center-controls.fade-in,
+.player-bottom-hud.fade-in {
     opacity: 1;
     visibility: visible;
     pointer-events: auto;
@@ -631,11 +635,189 @@ body {
 
 .player-back-btn,
 .player-action-btn,
-.server-btn {
+.server-btn,
+.player-ctrl-btn,
+.player-bar-btn,
+.player-scrubber-track {
     pointer-events: auto !important;
     cursor: pointer !important;
     position: relative;
     z-index: 410;
+}
+
+/* Center Playback Controls (10s Rewind | Center Play/Pause | 10s Forward) */
+.player-center-controls {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    align-items: center;
+    gap: 36px;
+    z-index: 400;
+    transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.player-ctrl-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(18, 18, 24, 0.78);
+    color: #ffffff;
+    border: 2px solid rgba(255, 255, 255, 0.25);
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(14px);
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.player-rewind-btn,
+.player-forward-btn {
+    width: 66px;
+    height: 66px;
+    font-size: 26px;
+    line-height: 1;
+}
+
+.player-rewind-btn .ctrl-sec,
+.player-forward-btn .ctrl-sec {
+    font-size: 11px;
+    font-weight: 800;
+    margin-top: -2px;
+}
+
+.player-play-btn {
+    width: 88px;
+    height: 88px;
+    font-size: 38px;
+    background: rgba(229, 9, 20, 0.38);
+    border: 2px solid rgba(255, 255, 255, 0.5);
+}
+
+.player-ctrl-btn:hover,
+.player-ctrl-btn.focused,
+.player-ctrl-btn:focus {
+    background: var(--primary, #E50914) !important;
+    border-color: #ffffff !important;
+    transform: scale(1.18);
+    box-shadow: 0 0 30px rgba(229, 9, 20, 0.85);
+    outline: none;
+}
+
+/* Bottom HUD Scrubber & Time Bar */
+.player-bottom-hud {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 24px 38px 28px 38px;
+    background: linear-gradient(0deg, rgba(0, 0, 0, 0.94) 0%, rgba(0, 0, 0, 0.6) 60%, transparent 100%);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    z-index: 400;
+    transition: opacity 0.3s ease;
+}
+
+.player-bar-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    color: #ffffff;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+    transition: all 0.2s ease;
+}
+
+.player-bar-btn:hover,
+.player-bar-btn.focused,
+.player-bar-btn:focus {
+    background: var(--primary, #E50914) !important;
+    border-color: #ffffff !important;
+    transform: scale(1.16);
+    box-shadow: 0 0 20px rgba(229, 9, 20, 0.7);
+    outline: none;
+}
+
+.player-time-display {
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: 600;
+    min-width: 54px;
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+}
+
+.player-scrubber-track {
+    position: relative;
+    flex: 1;
+    height: 7px;
+    background: rgba(255, 255, 255, 0.22);
+    border-radius: 5px;
+    cursor: pointer;
+    transition: height 0.15s ease;
+}
+
+.player-scrubber-track:hover,
+.player-scrubber-track.focused,
+.player-scrubber-track:focus {
+    height: 10px;
+    outline: none;
+}
+
+.player-scrubber-buffered {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.35);
+    border-radius: 5px;
+    pointer-events: none;
+}
+
+.player-scrubber-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    background: var(--primary, #E50914);
+    border-radius: 5px;
+    pointer-events: none;
+}
+
+.player-scrubber-thumb {
+    position: absolute;
+    right: -7px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #ffffff;
+    box-shadow: 0 0 8px rgba(0, 0, 0, 0.7);
+}
+
+.player-scrubber-track.focused .player-scrubber-thumb,
+.player-scrubber-track:hover .player-scrubber-thumb {
+    width: 18px;
+    height: 18px;
+    right: -9px;
+    background: #ffffff;
+    border: 2px solid var(--primary, #E50914);
+}
+
+.player-bottom-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
 }
 
 /* Remote Action Toast */
@@ -781,6 +963,44 @@ body {
     display: inline-block;
     max-width: 85%;
     white-space: pre-line;
+}
+
+/* Floating Unmute Banner */
+.player-unmute-banner {
+    position: absolute;
+    top: 90px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 450;
+    background: linear-gradient(135deg, rgba(229, 9, 20, 0.95), rgba(184, 7, 16, 0.95));
+    color: #ffffff;
+    font-size: 15px;
+    font-weight: 700;
+    padding: 12px 28px;
+    border-radius: 30px;
+    border: 2px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 0 10px 30px rgba(229, 9, 20, 0.6), 0 0 20px rgba(0, 0, 0, 0.8);
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    animation: pulseBanner 2.2s infinite ease-in-out;
+    transition: all 0.25s ease;
+}
+
+.player-unmute-banner.focused,
+.player-unmute-banner:hover {
+    background: #ff1a25;
+    border-color: #ffffff;
+    transform: translateX(-50%) scale(1.06);
+    outline: 2px solid #ffffff;
+    box-shadow: 0 12px 35px rgba(229, 9, 20, 0.9);
+}
+
+@keyframes pulseBanner {
+    0%, 100% { transform: translateX(-50%) scale(1); }
+    50% { transform: translateX(-50%) scale(1.03); }
 }
 
 /* Audio & Subtitles TV Sheet Modal */
@@ -1016,6 +1236,61 @@ body {
     color: #fff !important;
 }
 
+/* Audio Volume Controls Grid in Audio Modal */
+.audio-volume-controls {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+}
+
+.audio-vol-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 14px 12px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 12px;
+    color: #fff;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    gap: 6px;
+}
+
+.audio-vol-btn .vol-icon {
+    font-size: 22px;
+}
+
+.audio-vol-btn .vol-label {
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.audio-vol-btn.active {
+    background: rgba(229, 9, 20, 0.3) !important;
+    border-color: #E50914 !important;
+    box-shadow: 0 0 14px rgba(229, 9, 20, 0.4);
+}
+
+.audio-vol-btn.active .vol-label {
+    color: #ff4d58;
+}
+
+.audio-vol-btn.focused {
+    background: #E50914 !important;
+    border-color: #fff !important;
+    transform: scale(1.06);
+    outline: 2px solid #fff;
+    box-shadow: 0 0 22px rgba(229, 9, 20, 0.95);
+}
+
+.audio-vol-btn.focused .vol-label,
+.audio-vol-btn.focused .vol-icon {
+    color: #fff !important;
+}
+
 .audio-server-list {
     display: flex;
     flex-direction: column;
@@ -1026,6 +1301,10 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    width: 100%;
+    text-align: left;
+    font-family: inherit;
+    color: inherit;
     padding: 18px 24px;
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.12);
@@ -1085,6 +1364,10 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    width: 100%;
+    text-align: left;
+    font-family: inherit;
+    color: inherit;
     padding: 18px 24px;
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.12);

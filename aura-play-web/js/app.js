@@ -297,23 +297,10 @@ const App = {
             seasonsSection.classList.add("hidden");
         }
 
-        // Setup Play button with stream availability verification
+        // Setup Play button
         const playBtn = document.getElementById("modal-play-btn");
-        const isAvailable = (typeof TMDB.isMediaAvailable === "function") 
-            ? TMDB.isMediaAvailable(fullMedia) 
-            : true;
-
-        if (!isAvailable) {
-            playBtn.innerHTML = `<span>⏳ Not Yet Released on OTT</span>`;
-            playBtn.onclick = () => {
-                if (window.Player && typeof window.Player.showToast === "function") {
-                    window.Player.showToast("This title has not been released on digital streaming yet.");
-                }
-            };
-        } else {
-            playBtn.innerHTML = `<span>▶ Play</span>`;
-            playBtn.onclick = () => window.Player.play(fullMedia);
-        }
+        playBtn.innerHTML = `<span>▶</span> Play`;
+        playBtn.onclick = () => window.Player.play(fullMedia);
 
         // Setup Download button (for movies; episodes get their own per-row button)
         const dlBtn = document.getElementById("modal-download-btn");

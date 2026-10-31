@@ -58,6 +58,29 @@ const Navigation = {
     handleKeyDown(e) {
         const keyCode = e.keyCode;
 
+        // If Quality Picker is open
+        const picker = document.getElementById("quality-picker-overlay");
+        if (picker) {
+            if (keyCode === 27) { // Escape / Back
+                e.preventDefault();
+                picker.remove();
+                const dlBtn = document.getElementById("modal-download-btn");
+                if (dlBtn) this.setFocus(dlBtn);
+                return;
+            }
+            if (keyCode === 13) { // Enter / OK
+                e.preventDefault();
+                if (this.currentFocus) this.currentFocus.click();
+                return;
+            }
+            if ([37, 38, 39, 40].includes(keyCode)) {
+                e.preventDefault();
+                this.moveFocus(keyCode);
+                return;
+            }
+            return;
+        }
+
         // If Delete Download Confirmation Modal is open
         const deleteModal = document.getElementById("delete-download-modal");
         if (deleteModal && !deleteModal.classList.contains("hidden")) {
@@ -127,81 +150,101 @@ const Navigation = {
 
         // Special D-pad handling when online Cinema Stream Player is open
         if (window.Player && window.Player.isOpen) {
-            // When Audio & Subtitles TV Modal is open
-            if (window.Player.isAudioSubModalOpen) {
-                if (keyCode === 27) { // Escape
+            const audioSubModal = document.getElementById("audio-sub-modal");
+            const isAudioModalOpen = window.Player.isAudioSubModalOpen || (audioSubModal && !audioSubModal.classList.contains("hidden"));
+
+            // When Audio & Subtitles / Quality TV Modal is open
+            if (isAudioModalOpen) {
+                if (keyCode === 27 || keyCode === 10009) { // Escape / Back
                     e.preventDefault();
                     window.Player.closeAudioSubModal();
+                    window.Player.hideHud();
                     return;
                 }
-                if (keyCode === 13) { // Enter / OK
+                if (keyCode === 13 || keyCode === 32 || keyCode === 65379 || keyCode === 10252) { // Enter / OK / Space / TV Select
                     e.preventDefault();
-                    if (this.currentFocus) {
-                        this.currentFocus.click();
-                    }
+                    this.activateAudioSubModalElement();
                     return;
                 }
                 if ([37, 38, 39, 40].includes(keyCode)) {
                     e.preventDefault();
-                    this.moveFocus(keyCode);
+                    this.navigateAudioSubModal(keyCode);
                     return;
                 }
                 return;
             }
 
-            const isTopHudFocused = this.currentFocus && 
-                (this.currentFocus.id === "player-back-btn" || 
-                 this.currentFocus.id === "player-audio-sub-btn" ||
-                 this.currentFocus.id === "player-quality-btn" ||
-                 this.currentFocus.classList.contains("server-btn") ||
-                 (this.currentFocus.closest && this.currentFocus.closest(".player-hud") !== null));
+            // If Escape or Back key is pressed while player is open
+            if (keyCode === 27 || keyCode === 10009) {
+                e.preventDefault();
+                // If Quality Picker overlay is open, remove it
+                const picker = document.getElementById("quality-picker-overlay");
+                if (picker) {
+                    picker.remove();
+                    return;
+                }
+                // If Player HUD / Controls / Top Menu is open, hide it and stay in fullscreen video!
+                const isFocusedInHud = this.currentFocus && (
+                    this.currentFocus.id === "player-back-btn" || 
+                    this.currentFocus.id === "player-audio-sub-btn" ||
+                    this.currentFocus.id === "player-quality-btn" ||
+                    this.currentFocus.id === "player-volume-btn" ||
+                    this.currentFocus.id === "player-unmute-banner" ||
+                    this.currentFocus.classList.contains("server-btn") ||
+                    (this.currentFocus.closest && this.currentFocus.closest(".player-hud") !== null)
+                );
+                if (window.Player.isHudVisible || isFocusedInHud) {
+                    window.Player.hideHud();
+                    return;
+                }
+                // If HUD is already hidden, exit player
+                window.Player.close();
+                return;
+            }
+
+            const isTopHud = this.currentFocus && (
+                this.currentFocus.id === "player-back-btn" || 
+                this.currentFocus.id === "player-audio-sub-btn" ||
+                this.currentFocus.id === "player-quality-btn" ||
+                this.currentFocus.id === "player-volume-btn" ||
+                this.currentFocus.id === "player-unmute-banner" ||
+                this.currentFocus.classList.contains("server-btn") ||
+                (this.currentFocus.closest && this.currentFocus.closest(".player-hud") !== null)
+            );
 
             if (keyCode === 13 || keyCode === 32) { // OK / Enter / Space
                 e.preventDefault();
-                if (isTopHudFocused) {
+                if (isTopHud && this.currentFocus && typeof this.currentFocus.click === "function") {
                     this.currentFocus.click();
                     return;
-                }
-                // If HUD is currently showing but no button focused, focus Audio & Subtitles button
-                if (window.Player && window.Player.isHudVisible) {
-                    const targetBtn = document.getElementById("player-audio-sub-btn") || 
-                                      document.getElementById("player-quality-btn") ||
-                                      document.querySelector(".server-btn.active") ||
-                                      document.getElementById("player-back-btn");
-                    if (targetBtn) {
-                        this.setFocus(targetBtn);
-                        return;
-                    }
                 }
                 window.Player.togglePlayPause();
                 return;
             }
 
-            if (keyCode === 38) { // Up -> Reveal Top HUD & Focus Audio & Subtitles or Active Server
+            if (keyCode === 38) { // Up -> Show HUD and focus buttons
                 e.preventDefault();
                 window.Player.showHudTemporarily(8000);
-                if (!isTopHudFocused) {
-                    const activeBtn = document.getElementById("player-audio-sub-btn") || 
-                                      document.getElementById("player-quality-btn") ||
-                                      document.querySelector(".server-btn.active") ||
-                                      document.getElementById("player-back-btn");
-                    if (activeBtn) this.setFocus(activeBtn);
+                if (!isTopHud) {
+                    const topBtn = document.getElementById("player-audio-sub-btn") || 
+                                   document.getElementById("player-quality-btn") || 
+                                   document.getElementById("player-back-btn");
+                    if (topBtn) this.setFocus(topBtn);
                 }
                 return;
-            } else if (keyCode === 40) { // Down -> Hide Top HUD, return to clean video viewing
+            } else if (keyCode === 40) { // Down -> Hide HUD and resume pure fullscreen control
                 e.preventDefault();
-                if (isTopHudFocused) {
-                    window.Player.hideHud();
-                }
+                window.Player.hideHud();
                 return;
-            } else if (keyCode === 37) { // Left -> Seek -10s or navigate Top HUD
+            } else if (keyCode === 37) { // Left -> Navigate Top HUD or Seek -10s
                 e.preventDefault();
-                if (isTopHudFocused) {
+                if (isTopHud) {
                     window.Player.showHudTemporarily(8000);
                     const hudButtons = [
                         document.getElementById("player-back-btn"),
                         document.getElementById("player-audio-sub-btn"),
                         document.getElementById("player-quality-btn"),
+                        document.getElementById("player-volume-btn"),
                         document.getElementById("server-btn-vidsrcpm"),
                         document.getElementById("server-btn-vidlink"),
                         document.getElementById("server-btn-twoembed"),
@@ -215,14 +258,15 @@ const Navigation = {
                     window.Player.seek(-10);
                 }
                 return;
-            } else if (keyCode === 39) { // Right -> Seek +10s or navigate Top HUD
+            } else if (keyCode === 39) { // Right -> Navigate Top HUD or Seek +10s
                 e.preventDefault();
-                if (isTopHudFocused) {
+                if (isTopHud) {
                     window.Player.showHudTemporarily(8000);
                     const hudButtons = [
                         document.getElementById("player-back-btn"),
                         document.getElementById("player-audio-sub-btn"),
                         document.getElementById("player-quality-btn"),
+                        document.getElementById("player-volume-btn"),
                         document.getElementById("server-btn-vidsrcpm"),
                         document.getElementById("server-btn-vidlink"),
                         document.getElementById("server-btn-twoembed"),
@@ -267,6 +311,11 @@ const Navigation = {
     },
 
     getActiveScope() {
+        // If Quality Picker Overlay is open, scope to it
+        const picker = document.getElementById("quality-picker-overlay");
+        if (picker) {
+            return picker;
+        }
         // If Delete Download Confirmation Modal is open, scope to it
         const deleteModal = document.getElementById("delete-download-modal");
         if (deleteModal && !deleteModal.classList.contains("hidden")) {
@@ -323,7 +372,7 @@ const Navigation = {
         if (window.Player && window.Player.isOpen) {
             // Down (40) from top HUD (Server 1, Server 2, Server 3, or Back) -> Move directly down to Play Video button
             if (direction === 40 && (current.classList.contains("server-btn") || current.id === "player-back-btn")) {
-                const playBtn = document.getElementById("stream-play-btn");
+                const playBtn = document.getElementById("player-play-btn");
                 if (playBtn) {
                     return playBtn;
                 }
@@ -456,6 +505,407 @@ const Navigation = {
         }
 
         return bestCandidate;
+    },
+
+    activateAudioSubModalElement() {
+        const el = this.currentFocus || document.activeElement;
+        if (!el) return;
+
+        // 1. Header Tabs
+        const subTab = el.closest("#tab-subtitles");
+        if (subTab) {
+            window.Player.switchAudioSubTab("subtitles", false);
+            return;
+        }
+        const audioTab = el.closest("#tab-audio");
+        if (audioTab) {
+            window.Player.switchAudioSubTab("audio", false);
+            return;
+        }
+        const qualityTab = el.closest("#tab-quality");
+        if (qualityTab) {
+            window.Player.switchAudioSubTab("quality", false);
+            return;
+        }
+        const closeBtn = el.closest("#audio-sub-close-btn");
+        if (closeBtn) {
+            window.Player.closeAudioSubModal();
+            return;
+        }
+
+        // 2. Subtitle Language Button
+        const subBtn = el.closest(".sub-lang-btn");
+        if (subBtn) {
+            const lang = subBtn.getAttribute("data-lang");
+            if (lang) {
+                window.Player.selectSubtitle(lang);
+                return;
+            }
+        }
+
+        // 3. Quality Card Button
+        const qualityCard = el.closest(".quality-card");
+        if (qualityCard) {
+            const qKey = qualityCard.id ? qualityCard.id.replace("quality-card-", "") : null;
+            if (qKey) {
+                window.Player.selectQuality(qKey);
+                return;
+            }
+        }
+
+        // 4. Audio Language Button
+        const audioLangBtn = el.closest(".audio-lang-btn");
+        if (audioLangBtn) {
+            const trackKey = audioLangBtn.getAttribute("data-audio");
+            if (trackKey) {
+                window.Player.selectAudioTrack(trackKey);
+                return;
+            }
+        }
+
+        // 5. Audio Server Card
+        const audioServerCard = el.closest(".audio-server-card");
+        if (audioServerCard) {
+            const serverMap = {
+                "audio-card-vidsrcpm": "vidsrc_pm",
+                "audio-card-vidlink": "vidlink",
+                "audio-card-twoembed": "twoembed",
+                "audio-card-vidsrcsu": "vidsrc_su"
+            };
+            const sKey = serverMap[audioServerCard.id];
+            if (sKey) {
+                window.Player.switchServer(sKey);
+                window.Player.closeAudioSubModal();
+                return;
+            }
+        }
+
+        // 6. Audio Volume Control Buttons
+        const volBtn = el.closest(".audio-vol-btn");
+        if (volBtn) {
+            if (volBtn.id === "btn-vol-tv-down") {
+                window.Player.adjustTvVolume(-1);
+                return;
+            } else if (volBtn.id === "btn-vol-tv-up") {
+                window.Player.adjustTvVolume(1);
+                return;
+            } else if (volBtn.id === "btn-vol-100") {
+                window.Player.setVolume(1.0);
+                return;
+            } else if (volBtn.id === "btn-vol-mute") {
+                window.Player.toggleMute();
+                return;
+            }
+        }
+
+        // 7. Timing Sync Buttons
+        if (el.closest("#timing-minus-btn")) {
+            window.Player.adjustSubtitleOffset(-0.5);
+            return;
+        }
+        if (el.closest("#timing-plus-btn")) {
+            window.Player.adjustSubtitleOffset(0.5);
+            return;
+        }
+        if (el.closest("#timing-reset-btn")) {
+            window.Player.adjustSubtitleOffset(0, true);
+            return;
+        }
+
+        // Fallback
+        if (typeof el.click === "function") {
+            el.click();
+        }
+    },
+
+    navigateAudioSubModal(direction) {
+        const cur = this.currentFocus || document.activeElement;
+        const modal = document.getElementById("audio-sub-modal");
+        if (!modal) return;
+
+        const headerTabs = [
+            document.getElementById("tab-subtitles"),
+            document.getElementById("tab-audio"),
+            document.getElementById("tab-quality"),
+            document.getElementById("audio-sub-close-btn")
+        ].filter(Boolean);
+
+        const isHeader = headerTabs.some(t => t === cur || (cur && t.contains(cur)));
+
+        // A. Header Tabs: [Subtitles, Audio & Servers, Quality, Close]
+        if (isHeader) {
+            const activeHeaderBtn = headerTabs.find(t => t === cur || (cur && t.contains(cur)));
+            const idx = headerTabs.indexOf(activeHeaderBtn);
+
+            if (direction === 37) { // Left
+                if (idx > 0) {
+                    const nextTab = headerTabs[idx - 1];
+                    this.setFocus(nextTab);
+                    if (nextTab.id === "tab-subtitles") window.Player.switchAudioSubTab("subtitles", true);
+                    else if (nextTab.id === "tab-audio") window.Player.switchAudioSubTab("audio", true);
+                    else if (nextTab.id === "tab-quality") window.Player.switchAudioSubTab("quality", true);
+                }
+                return;
+            }
+            if (direction === 39) { // Right
+                if (idx < headerTabs.length - 1) {
+                    const nextTab = headerTabs[idx + 1];
+                    this.setFocus(nextTab);
+                    if (nextTab.id === "tab-subtitles") window.Player.switchAudioSubTab("subtitles", true);
+                    else if (nextTab.id === "tab-audio") window.Player.switchAudioSubTab("audio", true);
+                    else if (nextTab.id === "tab-quality") window.Player.switchAudioSubTab("quality", true);
+                }
+                return;
+            }
+            if (direction === 40) { // Down -> Enter active tab content
+                const activeBody = modal.querySelector(".audio-sub-body:not(.hidden)");
+                if (activeBody) {
+                    const firstItem = activeBody.querySelector(".focusable.active") || activeBody.querySelector(".focusable");
+                    if (firstItem) {
+                        this.setFocus(firstItem);
+                    }
+                }
+                return;
+            }
+            return;
+        }
+
+        // B. Subtitles Tab Content
+        const subContent = document.getElementById("subtitles-tab-content");
+        if (subContent && !subContent.classList.contains("hidden") && (subContent === cur || subContent.contains(cur))) {
+            const subBtns = Array.from(subContent.querySelectorAll(".sub-lang-btn.focusable"));
+            const timingBtns = Array.from(subContent.querySelectorAll(".timing-btn.focusable"));
+
+            const sIdx = subBtns.indexOf(cur.closest(".sub-lang-btn") || cur);
+            if (sIdx !== -1) {
+                const COLS = 3;
+                const row = Math.floor(sIdx / COLS);
+                const col = sIdx % COLS;
+
+                if (direction === 37) { // Left (stay within current row)
+                    if (col > 0) {
+                        this.setFocus(subBtns[sIdx - 1]);
+                    }
+                    return;
+                }
+                if (direction === 39) { // Right (stay within current row)
+                    if (col < COLS - 1 && sIdx + 1 < subBtns.length) {
+                        this.setFocus(subBtns[sIdx + 1]);
+                    }
+                    return;
+                }
+                if (direction === 38) { // Up
+                    if (row === 0) {
+                        // Move directly to Header Tab matching the column
+                        const targetTab = headerTabs[Math.min(col, headerTabs.length - 1)];
+                        if (targetTab) this.setFocus(targetTab);
+                    } else {
+                        this.setFocus(subBtns[sIdx - COLS]);
+                    }
+                    return;
+                }
+                if (direction === 40) { // Down
+                    if (sIdx + COLS < subBtns.length) {
+                        this.setFocus(subBtns[sIdx + COLS]);
+                    } else if (sIdx === 8) {
+                        // Portuguese (col 2) -> Move to Japanese (col 1 in row below)
+                        this.setFocus(subBtns[subBtns.length - 1]);
+                    } else {
+                        // Bottom row (Italian at 9, Japanese at 10) -> Move to Timing row
+                        const tIdx = Math.min(col, timingBtns.length - 1);
+                        if (timingBtns[tIdx]) this.setFocus(timingBtns[tIdx]);
+                        else if (timingBtns.length > 0) this.setFocus(timingBtns[0]);
+                    }
+                    return;
+                }
+                return;
+            }
+
+            // Timing row (-0.5s, +0.5s, Reset)
+            const tIdx = timingBtns.indexOf(cur.closest(".timing-btn") || cur);
+            if (tIdx !== -1) {
+                if (direction === 37 && tIdx > 0) {
+                    this.setFocus(timingBtns[tIdx - 1]);
+                    return;
+                }
+                if (direction === 39 && tIdx < timingBtns.length - 1) {
+                    this.setFocus(timingBtns[tIdx + 1]);
+                    return;
+                }
+                if (direction === 38) { // Up -> Return to subtitle button directly above
+                    if (tIdx === 0 && subBtns[9]) {
+                        this.setFocus(subBtns[9]); // Italian
+                    } else if (tIdx === 1 && subBtns[10]) {
+                        this.setFocus(subBtns[10]); // Japanese
+                    } else if (subBtns.length > 0) {
+                        this.setFocus(subBtns[subBtns.length - 1]);
+                    }
+                    return;
+                }
+                return;
+            }
+        }
+
+        // C. Quality Tab Content
+        const qualityContent = document.getElementById("quality-tab-content");
+        if (qualityContent && !qualityContent.classList.contains("hidden") && (qualityContent === cur || qualityContent.contains(cur))) {
+            const qualityCards = Array.from(qualityContent.querySelectorAll(".quality-card.focusable"));
+            const qIdx = qualityCards.indexOf(cur.closest(".quality-card") || cur);
+
+            if (qIdx !== -1) {
+                if (direction === 38) { // Up
+                    if (qIdx === 0) {
+                        const qTab = document.getElementById("tab-quality") || headerTabs[2];
+                        if (qTab) this.setFocus(qTab);
+                    } else {
+                        this.setFocus(qualityCards[qIdx - 1]);
+                    }
+                    return;
+                }
+                if (direction === 40) { // Down
+                    if (qIdx < qualityCards.length - 1) {
+                        this.setFocus(qualityCards[qIdx + 1]);
+                    }
+                    return;
+                }
+                if (direction === 37) { // Left -> Switch to Audio Tab
+                    const aTab = document.getElementById("tab-audio");
+                    if (aTab) {
+                        window.Player.switchAudioSubTab("audio", true);
+                        this.setFocus(aTab);
+                    }
+                    return;
+                }
+                if (direction === 39) { // Right -> Focus Close button
+                    const closeBtn = document.getElementById("audio-sub-close-btn");
+                    if (closeBtn) this.setFocus(closeBtn);
+                    return;
+                }
+                return;
+            }
+        }
+
+        // D. Audio & Servers Tab Content
+        const audioContent = document.getElementById("audio-tab-content");
+        if (audioContent && !audioContent.classList.contains("hidden") && (audioContent === cur || audioContent.contains(cur))) {
+            const audioBtns = Array.from(audioContent.querySelectorAll(".audio-lang-btn.focusable"));
+            const volBtns = Array.from(audioContent.querySelectorAll(".audio-vol-btn.focusable"));
+            const serverCards = Array.from(audioContent.querySelectorAll(".audio-server-card.focusable"));
+
+            // 1. Audio Language Buttons (3 columns)
+            const aIdx = audioBtns.indexOf(cur.closest(".audio-lang-btn") || cur);
+            if (aIdx !== -1) {
+                const COLS = 3;
+                const row = Math.floor(aIdx / COLS);
+                const col = aIdx % COLS;
+
+                if (direction === 37) { // Left
+                    if (col > 0) this.setFocus(audioBtns[aIdx - 1]);
+                    return;
+                }
+                if (direction === 39) { // Right
+                    if (col < COLS - 1 && aIdx + 1 < audioBtns.length) this.setFocus(audioBtns[aIdx + 1]);
+                    return;
+                }
+                if (direction === 38) { // Up
+                    if (row === 0) {
+                        const targetTab = headerTabs[Math.min(col, headerTabs.length - 1)];
+                        if (targetTab) this.setFocus(targetTab);
+                    } else {
+                        this.setFocus(audioBtns[aIdx - COLS]);
+                    }
+                    return;
+                }
+                if (direction === 40) { // Down -> Move to next row or to Volume controls
+                    if (aIdx + COLS < audioBtns.length) {
+                        this.setFocus(audioBtns[aIdx + COLS]);
+                    } else if (volBtns.length > 0) {
+                        const targetVolIdx = Math.min(col, volBtns.length - 1);
+                        this.setFocus(volBtns[targetVolIdx]);
+                    } else if (serverCards.length > 0) {
+                        this.setFocus(serverCards[0]);
+                    }
+                    return;
+                }
+                return;
+            }
+
+            // 2. Audio Volume Controls (4 buttons: 100%, 75%, 50%, Mute)
+            const vIdx = volBtns.indexOf(cur.closest(".audio-vol-btn") || cur);
+            if (vIdx !== -1) {
+                if (direction === 37) { // Left
+                    if (vIdx > 0) this.setFocus(volBtns[vIdx - 1]);
+                    return;
+                }
+                if (direction === 39) { // Right
+                    if (vIdx < volBtns.length - 1) this.setFocus(volBtns[vIdx + 1]);
+                    return;
+                }
+                if (direction === 38) { // Up -> Return to audio language grid
+                    if (audioBtns.length > 0) {
+                        const targetAudioIdx = Math.min(vIdx + 3, audioBtns.length - 1);
+                        this.setFocus(audioBtns[targetAudioIdx]);
+                    } else {
+                        const aTab = document.getElementById("tab-audio") || headerTabs[1];
+                        if (aTab) this.setFocus(aTab);
+                    }
+                    return;
+                }
+                if (direction === 40) { // Down -> Move to Streaming Server Cards
+                    if (serverCards.length > 0) {
+                        this.setFocus(serverCards[0]);
+                    }
+                    return;
+                }
+                return;
+            }
+
+            // 3. Audio Server Cards (1 column)
+            const sCardIdx = serverCards.indexOf(cur.closest(".audio-server-card") || cur);
+            if (sCardIdx !== -1) {
+                if (direction === 38) { // Up
+                    if (sCardIdx === 0) {
+                        if (volBtns.length > 0) {
+                            this.setFocus(volBtns[0]);
+                        } else if (audioBtns.length > 0) {
+                            this.setFocus(audioBtns[audioBtns.length - 1]);
+                        } else {
+                            const aTab = document.getElementById("tab-audio") || headerTabs[1];
+                            if (aTab) this.setFocus(aTab);
+                        }
+                    } else {
+                        this.setFocus(serverCards[sCardIdx - 1]);
+                    }
+                    return;
+                }
+                if (direction === 40) { // Down
+                    if (sCardIdx < serverCards.length - 1) {
+                        this.setFocus(serverCards[sCardIdx + 1]);
+                    }
+                    return;
+                }
+                if (direction === 37) { // Left -> Switch to Subtitles Tab
+                    const subTab = document.getElementById("tab-subtitles");
+                    if (subTab) {
+                        window.Player.switchAudioSubTab("subtitles", true);
+                        this.setFocus(subTab);
+                    }
+                    return;
+                }
+                if (direction === 39) { // Right -> Switch to Quality Tab
+                    const qTab = document.getElementById("tab-quality");
+                    if (qTab) {
+                        window.Player.switchAudioSubTab("quality", true);
+                        this.setFocus(qTab);
+                    }
+                    return;
+                }
+                return;
+            }
+        }
+
+        // Fallback
+        this.moveFocus(direction);
     }
 };
 
